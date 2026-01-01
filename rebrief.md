@@ -254,6 +254,8 @@ c:\scripts\last\ai-tally-sync\
 | **TallyProxy.exe** | ✅ Complete | 2026-01-01 | Windows executable, pkg build |
 | **Landing Page Download** | ✅ Complete | 2026-01-01 | Download section, setup instructions |
 | **GitHub Push** | ✅ Complete | 2026-01-01 | Parzival048/booksneo |
+| **TallyProxy v2.0** | ✅ Complete | 2026-01-02 | CommonJS format, stable EXE |
+| **Remove Settings Menu** | ✅ Complete | 2026-01-02 | Removed from Header dropdown |
 
 Legend: ✅ Complete | ⏳ In Progress | ⬜ To Do | ⚠️ Limited
 
@@ -291,7 +293,34 @@ Parzival
 
 ---
 
-## 📋 RECENT SESSION CHANGES (2026-01-01 23:53 IST)
+## 📋 RECENT SESSION CHANGES (2026-01-02 00:16 IST)
+
+### TallyProxy v2.0 & UI Updates - COMPLETE ✅
+
+#### Fixes & Updates:
+
+1. **TallyProxy v2.0** (`tally-proxy.cjs`)
+   - Rewrote proxy in CommonJS format for pkg compatibility
+   - Console stays open (won't close immediately)
+   - Colorful output with emojis and status messages
+   - Session statistics on exit
+   - Binds to `0.0.0.0` for better connectivity
+   - Proper error handling with "Press Enter to exit"
+
+2. **Removed Settings from User Menu** (`Header.jsx`)
+   - Removed "Settings" option from user dropdown menu
+   - Dropdown now shows: Profile, Sign out only
+
+#### Files Created:
+- `tally-proxy.cjs` - CommonJS proxy for pkg compatibility
+
+#### Files Modified:
+- `src/components/layout/Header.jsx` - Removed Settings link
+- `public/TallyProxy.exe` - Rebuilt with v2.0 proxy
+
+---
+
+## 📋 PREVIOUS SESSION CHANGES (2026-01-01 23:53 IST)
 
 ### Netlify Deployment & Tally Proxy - COMPLETE ✅
 
