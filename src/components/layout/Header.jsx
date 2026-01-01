@@ -417,22 +417,6 @@ const Header = ({ onMenuToggle }) => {
                                 >
                                     View Profile
                                 </Link>
-                                <Link
-                                    to="/settings"
-                                    onClick={() => setIsUserMenuOpen(false)}
-                                    style={{
-                                        display: 'block',
-                                        padding: 'var(--space-3) var(--space-4)',
-                                        color: 'var(--text-secondary)',
-                                        fontSize: 'var(--text-sm)',
-                                        textDecoration: 'none',
-                                        transition: 'background 0.15s'
-                                    }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-glass)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                >
-                                    Settings
-                                </Link>
 
                                 {/* Logout */}
                                 <button
