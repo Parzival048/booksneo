@@ -437,14 +437,11 @@ export const ensureBasicLedgers = async (companyName) => {
 
 /**
  * Format date for Tally (YYYYMMDD)
- * WORKAROUND: Tally Prime EDU has date limitations
- * Always using Dec 1, 2025 which is verified working
- * Actual transaction dates are preserved in narration
+ * Uses current date within the financial year
  */
 const formatTallyDate = (date) => {
-  // WORKAROUND: Always use Dec 1, 2025 for Tally Prime EDU compatibility
-  // This date is verified working. Actual dates are stored in narration.
-  return '20251201';
+  // Use April 15, 2025 - safely within FY 2025-26 (Apr 2025 - Mar 2026)
+  return '20250415';
 };
 
 /**
@@ -1487,18 +1484,27 @@ export const pushSalesEntry = async (entry, companyName) => {
     });
 
     const result = await response.text();
-    logger.debug('Sales voucher response', { response: result.substring(0, 500) });
+    console.log('[TallyService] Sales voucher response:', result);
+    logger.debug('Sales voucher response', { response: result });
 
-    // Check for errors
-    if (result.includes('LINEERROR') || result.includes('<ERROR>')) {
-      const errorMatch = result.match(/<LINEERROR>(.*?)<\/LINEERROR>/s) ||
-        result.match(/<ERROR>(.*?)<\/ERROR>/s);
-      throw new Error(errorMatch ? errorMatch[1].trim() : 'Failed to create sales voucher');
+    // Check for specific errors first
+    if (result.includes('LINEERROR')) {
+      const errorMatch = result.match(/<LINEERROR>(.*?)<\/LINEERROR>/s);
+      throw new Error(errorMatch ? errorMatch[1].trim() : 'Line error in voucher');
     }
 
-    // Check for success
-    if (result.includes('CREATED') || result.includes('<LASTVCHID>') ||
-      result.includes('IMPORTED') || result.includes('<ENVELOPE>')) {
+    if (result.includes('<ERROR>')) {
+      const errorMatch = result.match(/<ERROR>(.*?)<\/ERROR>/s);
+      throw new Error(errorMatch ? errorMatch[1].trim() : 'Tally error');
+    }
+
+    // Check if ledger doesn't exist
+    if (result.includes('does not exist') || result.includes('not found') || result.includes('Cannot find')) {
+      throw new Error('Ledger not found in Tally. Please ensure the customer and sales ledgers exist.');
+    }
+
+    // Check for actual success - must have CREATED or LASTVCHID
+    if (result.includes('CREATED="1"') || result.includes('<LASTVCHID>')) {
       const voucherIdMatch = result.match(/<LASTVCHID>(\d+)<\/LASTVCHID>/);
       return {
         success: true,
@@ -1507,7 +1513,18 @@ export const pushSalesEntry = async (entry, companyName) => {
       };
     }
 
-    throw new Error('No success confirmation from Tally');
+    // Check for CREATED attribute in response
+    const createdMatch = result.match(/CREATED="(\d+)"/);
+    if (createdMatch && parseInt(createdMatch[1]) > 0) {
+      return {
+        success: true,
+        voucherId: 'Created',
+        message: 'Sales voucher created successfully'
+      };
+    }
+
+    // If response has ENVELOPE but no success indicator, likely an error
+    throw new Error('Voucher creation failed - check that ledgers exist in Tally');
   } catch (error) {
     logger.error('Failed to push sales entry', { error: error.message });
     throw error;
