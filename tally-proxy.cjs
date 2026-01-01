@@ -1,11 +1,10 @@
 /**
- * BooksNeo - Tally CORS Proxy Server
- * Version 2.0 - Fixed for Windows EXE
- * 
- * CommonJS format for better pkg compatibility
+ * BooksNeo - Tally CORS Proxy Server v2.1
+ * Auto-kills existing process on port 9001
  */
 
 const http = require('http');
+const { exec } = require('child_process');
 
 const TALLY_HOST = '127.0.0.1';
 const TALLY_PORT = 9000;
@@ -22,155 +21,147 @@ const corsHeaders = {
 // Stats
 let stats = { total: 0, success: 0, failed: 0 };
 
-// Colors for console
-const colors = {
-    reset: '\x1b[0m',
-    cyan: '\x1b[36m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    red: '\x1b[31m',
-    gray: '\x1b[90m',
-    bold: '\x1b[1m'
+// Colors
+const c = {
+    reset: '\x1b[0m', cyan: '\x1b[36m', green: '\x1b[32m',
+    yellow: '\x1b[33m', red: '\x1b[31m', gray: '\x1b[90m', bold: '\x1b[1m'
 };
 
-function log(color, message) {
-    const time = new Date().toLocaleTimeString();
-    console.log(`${colors.gray}[${time}]${colors.reset} ${color}${message}${colors.reset}`);
+function log(color, msg) {
+    console.log(`${c.gray}[${new Date().toLocaleTimeString()}]${c.reset} ${color}${msg}${c.reset}`);
 }
 
-// Clear screen and show banner
-console.clear();
-console.log(`
-${colors.cyan}╔══════════════════════════════════════════════════════════════╗
-║                                                              ║
-║          ${colors.bold}🔄 BOOKSNEO TALLY PROXY SERVER v2.0${colors.cyan}              ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝${colors.reset}
-`);
+// Kill process on port (Windows)
+function killPort(port) {
+    return new Promise((resolve) => {
+        exec(`netstat -ano | findstr :${port}`, (err, stdout) => {
+            if (err || !stdout) { resolve(); return; }
 
-// Create server
-const server = http.createServer((req, res) => {
-    stats.total++;
+            const lines = stdout.trim().split('\n');
+            const pids = new Set();
 
-    // Handle preflight
-    if (req.method === 'OPTIONS') {
-        res.writeHead(200, corsHeaders);
-        res.end();
-        log(colors.gray, 'OPTIONS preflight - OK');
-        return;
-    }
+            lines.forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                const pid = parts[parts.length - 1];
+                if (pid && pid !== '0' && !isNaN(pid)) pids.add(pid);
+            });
 
-    let body = '';
-    req.on('data', chunk => body += chunk);
+            if (pids.size === 0) { resolve(); return; }
 
-    req.on('end', () => {
-        log(colors.yellow, '→ Forwarding request to Tally...');
+            console.log(`${c.yellow}  ⚠ Killing existing process on port ${port}...${c.reset}`);
 
-        const options = {
-            hostname: TALLY_HOST,
-            port: TALLY_PORT,
-            path: '/',
-            method: 'POST',
-            headers: {
-                'Content-Type': 'text/xml',
-                'Content-Length': Buffer.byteLength(body)
-            }
-        };
-
-        const proxyReq = http.request(options, (proxyRes) => {
-            let data = '';
-            proxyRes.on('data', chunk => data += chunk);
-            proxyRes.on('end', () => {
-                res.writeHead(proxyRes.statusCode || 200, {
-                    ...corsHeaders,
-                    'Content-Type': 'text/xml'
+            let killed = 0;
+            pids.forEach(pid => {
+                exec(`taskkill /F /PID ${pid}`, (err2) => {
+                    killed++;
+                    if (killed === pids.size) {
+                        setTimeout(resolve, 500); // Wait for port release
+                    }
                 });
-                res.end(data);
-
-                if (data.includes('<ENVELOPE>') && !data.includes('ERROR')) {
-                    stats.success++;
-                    log(colors.green, `✓ Success (${data.length} bytes)`);
-                } else {
-                    stats.failed++;
-                    log(colors.red, '✗ Tally returned error');
-                }
             });
         });
-
-        proxyReq.on('error', (err) => {
-            stats.failed++;
-            log(colors.red, `✗ Connection failed: ${err.message}`);
-
-            res.writeHead(502, { ...corsHeaders, 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                error: 'Cannot connect to Tally',
-                message: err.message,
-                solution: 'Make sure Tally Prime is running with ODBC enabled on port 9000'
-            }));
-        });
-
-        proxyReq.write(body);
-        proxyReq.end();
     });
-});
-
-// Handle server errors
-server.on('error', (err) => {
-    console.log(`\n${colors.red}❌ ERROR: ${err.message}${colors.reset}`);
-    if (err.code === 'EADDRINUSE') {
-        console.log(`\n   Port ${PROXY_PORT} is already in use.`);
-        console.log('   Close any other TallyProxy instance first.\n');
-    }
-    waitAndExit();
-});
-
-// Start server
-server.listen(PROXY_PORT, '0.0.0.0', () => {
-    console.log(`${colors.green}  ✓ Proxy started successfully!${colors.reset}\n`);
-    console.log(`${colors.cyan}  ┌────────────────────────────────────────────────────────────┐`);
-    console.log(`  │                                                            │`);
-    console.log(`  │   ${colors.bold}Proxy URL:${colors.cyan}      http://localhost:${PROXY_PORT}                   │`);
-    console.log(`  │   ${colors.bold}Tally URL:${colors.cyan}      http://127.0.0.1:${TALLY_PORT}                   │`);
-    console.log(`  │                                                            │`);
-    console.log(`  └────────────────────────────────────────────────────────────┘${colors.reset}\n`);
-
-    console.log(`${colors.yellow}  ⚠ CHECKLIST:${colors.reset}`);
-    console.log('     ✓ Tally Prime must be running');
-    console.log('     ✓ Open a company in Tally');
-    console.log('     ✓ Enable ODBC: F12 → Advanced → Enable ODBC Server = Yes');
-    console.log('     ✓ Keep this window open\n');
-
-    console.log(`${colors.gray}  Press Ctrl+C to stop${colors.reset}\n`);
-    console.log(`${colors.cyan}  ─────────────────── Request Log ───────────────────${colors.reset}\n`);
-});
-
-// Wait for key before exiting
-function waitAndExit() {
-    console.log(`\n${colors.yellow}  Press Enter to exit...${colors.reset}`);
-    process.stdin.resume();
-    process.stdin.once('data', () => process.exit(0));
-
-    // Fallback timeout
-    setTimeout(() => {
-        console.log('\n  Auto-closing in 30 seconds...');
-    }, 30000);
 }
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log(`\n\n${colors.cyan}  ─────────────────── Session Summary ───────────────────${colors.reset}\n`);
-    console.log(`  📊 Total Requests: ${stats.total}`);
-    console.log(`  ${colors.green}✓ Successful: ${stats.success}${colors.reset}`);
-    console.log(`  ${colors.red}✗ Failed: ${stats.failed}${colors.reset}\n`);
-    console.log(`${colors.green}  🛑 Proxy stopped. Goodbye!${colors.reset}\n`);
-    waitAndExit();
+// Create server
+function createServer() {
+    const server = http.createServer((req, res) => {
+        stats.total++;
+
+        if (req.method === 'OPTIONS') {
+            res.writeHead(200, corsHeaders);
+            res.end();
+            return;
+        }
+
+        let body = '';
+        req.on('data', chunk => body += chunk);
+
+        req.on('end', () => {
+            log(c.yellow, '→ Forwarding to Tally...');
+
+            const proxyReq = http.request({
+                hostname: TALLY_HOST,
+                port: TALLY_PORT,
+                path: '/',
+                method: 'POST',
+                headers: { 'Content-Type': 'text/xml', 'Content-Length': Buffer.byteLength(body) }
+            }, (proxyRes) => {
+                let data = '';
+                proxyRes.on('data', chunk => data += chunk);
+                proxyRes.on('end', () => {
+                    res.writeHead(proxyRes.statusCode || 200, { ...corsHeaders, 'Content-Type': 'text/xml' });
+                    res.end(data);
+
+                    if (data.includes('<ENVELOPE>') && !data.includes('ERROR')) {
+                        stats.success++;
+                        log(c.green, `✓ Success (${data.length} bytes)`);
+                    } else {
+                        stats.failed++;
+                        log(c.red, '✗ Tally error');
+                    }
+                });
+            });
+
+            proxyReq.on('error', (err) => {
+                stats.failed++;
+                log(c.red, `✗ ${err.message}`);
+                res.writeHead(502, { ...corsHeaders, 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Cannot connect to Tally', message: err.message }));
+            });
+
+            proxyReq.write(body);
+            proxyReq.end();
+        });
+    });
+
+    server.on('error', (err) => {
+        console.log(`\n${c.red}❌ ERROR: ${err.message}${c.reset}\n`);
+        waitExit();
+    });
+
+    server.listen(PROXY_PORT, '0.0.0.0', () => {
+        console.log(`${c.green}  ✓ Proxy started on port ${PROXY_PORT}${c.reset}\n`);
+        console.log(`${c.cyan}  ┌──────────────────────────────────────────────┐`);
+        console.log(`  │  Proxy:  ${c.bold}http://localhost:${PROXY_PORT}${c.cyan}             │`);
+        console.log(`  │  Tally:  ${c.bold}http://127.0.0.1:${TALLY_PORT}${c.cyan}             │`);
+        console.log(`  └──────────────────────────────────────────────┘${c.reset}\n`);
+        console.log(`${c.yellow}  Requirements:${c.reset}`);
+        console.log('  • Tally Prime running with ODBC enabled');
+        console.log('  • Company open in Tally\n');
+        console.log(`${c.gray}  Press Ctrl+C to stop${c.reset}\n`);
+        console.log(`${c.cyan}  ─────── Request Log ───────${c.reset}\n`);
+    });
+
+    process.on('SIGINT', () => {
+        console.log(`\n\n${c.cyan}  ─── Summary ───${c.reset}`);
+        console.log(`  Total: ${stats.total} | ${c.green}OK: ${stats.success}${c.reset} | ${c.red}Fail: ${stats.failed}${c.reset}\n`);
+        waitExit();
+    });
+}
+
+function waitExit() {
+    console.log(`${c.yellow}  Press Enter to exit...${c.reset}`);
+    process.stdin.resume();
+    process.stdin.once('data', () => process.exit(0));
+}
+
+// Main
+console.clear();
+console.log(`
+${c.cyan}╔══════════════════════════════════════════════════════╗
+║     ${c.bold}🔄 BOOKSNEO TALLY PROXY v2.1${c.cyan}                    ║
+╚══════════════════════════════════════════════════════╝${c.reset}
+`);
+
+console.log(`${c.gray}  Checking port ${PROXY_PORT}...${c.reset}`);
+
+killPort(PROXY_PORT).then(() => {
+    console.log(`${c.green}  ✓ Port ${PROXY_PORT} available${c.reset}\n`);
+    createServer();
 });
 
-// Handle errors gracefully
 process.on('uncaughtException', (err) => {
-    console.log(`\n${colors.red}  ❌ Error: ${err.message}${colors.reset}`);
-    waitAndExit();
+    console.log(`\n${c.red}  Error: ${err.message}${c.reset}`);
+    waitExit();
 });
-
-// Keep alive
-console.log(`${colors.gray}  [Waiting for connections...]${colors.reset}\n`);
