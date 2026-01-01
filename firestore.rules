@@ -1,0 +1,110 @@
+// ============================================
+// FIRESTORE SECURITY RULES FOR BOOKSNEO
+// ============================================
+// Copy these rules to Firebase Console > Firestore Database > Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user is accessing their own data
+    function isOwnData() {
+      return request.auth.uid == resource.data.user_id;
+    }
+    
+    // Helper function for new documents
+    function isCreatingOwnData() {
+      return request.auth.uid == request.resource.data.user_id;
+    }
+    
+    // ============================================
+    // USERS COLLECTION
+    // ============================================
+    match /users/{userId} {
+      // Users can read/write their own profile
+      allow read, write: if isAuthenticated() && isOwner(userId);
+    }
+    
+    // ============================================
+    // TRANSACTIONS COLLECTION
+    // ============================================
+    match /transactions/{transactionId} {
+      // Create: User must be authenticated and setting their own user_id
+      allow create: if isAuthenticated() && isCreatingOwnData();
+      
+      // Read: User can only read their own transactions
+      allow read: if isAuthenticated() && isOwnData();
+      
+      // Update: User can only update their own transactions
+      allow update: if isAuthenticated() && isOwnData() && isCreatingOwnData();
+      
+      // Delete: User can only delete their own transactions
+      allow delete: if isAuthenticated() && isOwnData();
+    }
+    
+    // ============================================
+    // COMPANIES COLLECTION
+    // ============================================
+    match /companies/{companyId} {
+      allow create: if isAuthenticated() && isCreatingOwnData();
+      allow read: if isAuthenticated() && isOwnData();
+      allow update: if isAuthenticated() && isOwnData() && isCreatingOwnData();
+      allow delete: if isAuthenticated() && isOwnData();
+    }
+    
+    // ============================================
+    // LEDGERS COLLECTION
+    // ============================================
+    match /ledgers/{ledgerId} {
+      allow create: if isAuthenticated() && isCreatingOwnData();
+      allow read: if isAuthenticated() && isOwnData();
+      allow update: if isAuthenticated() && isOwnData() && isCreatingOwnData();
+      allow delete: if isAuthenticated() && isOwnData();
+    }
+    
+    // ============================================
+    // LEARNING PATTERNS COLLECTION
+    // ============================================
+    match /learningPatterns/{patternId} {
+      allow create: if isAuthenticated() && isCreatingOwnData();
+      allow read: if isAuthenticated() && isOwnData();
+      allow update: if isAuthenticated() && isOwnData() && isCreatingOwnData();
+      allow delete: if isAuthenticated() && isOwnData();
+    }
+    
+    // ============================================
+    // SETTINGS COLLECTION
+    // ============================================
+    match /settings/{userId} {
+      // Settings document ID is the user ID
+      allow read, write: if isAuthenticated() && isOwner(userId);
+    }
+    
+    // ============================================
+    // VOUCHERS COLLECTION (for Tally sync)
+    // ============================================
+    match /vouchers/{voucherId} {
+      allow create: if isAuthenticated() && isCreatingOwnData();
+      allow read: if isAuthenticated() && isOwnData();
+      allow update: if isAuthenticated() && isOwnData() && isCreatingOwnData();
+      allow delete: if isAuthenticated() && isOwnData();
+    }
+    
+    // ============================================
+    // Deny all other access
+    // ============================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
