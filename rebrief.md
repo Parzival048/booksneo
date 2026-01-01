@@ -249,6 +249,11 @@ c:\scripts\last\ai-tally-sync\
 | **Sales Tally Integration** | ✅ Complete | 2025-12-28 | pushSalesEntry, GST vouchers |
 | **Purchase Tally Integration** | ✅ Complete | 2025-12-28 | pushPurchaseEntry, GST input credit |
 | **GST Ledger Auto-Creation** | ✅ Complete | 2025-12-28 | Output/Input CGST/SGST/IGST |
+| **Netlify Deployment** | ✅ Complete | 2026-01-01 | netlify.toml, SPA redirects, security headers |
+| **Tally CORS Proxy** | ✅ Complete | 2026-01-01 | tally-proxy.mjs, port 9001 |
+| **TallyProxy.exe** | ✅ Complete | 2026-01-01 | Windows executable, pkg build |
+| **Landing Page Download** | ✅ Complete | 2026-01-01 | Download section, setup instructions |
+| **GitHub Push** | ✅ Complete | 2026-01-01 | Parzival048/booksneo |
 
 Legend: ✅ Complete | ⏳ In Progress | ⬜ To Do | ⚠️ Limited
 
@@ -286,7 +291,73 @@ Parzival
 
 ---
 
-## 📋 RECENT SESSION CHANGES (2025-12-29 23:03 IST)
+## 📋 RECENT SESSION CHANGES (2026-01-01 23:53 IST)
+
+### Netlify Deployment & Tally Proxy - COMPLETE ✅
+
+#### New Features Implemented:
+
+1. **Netlify Deployment Setup**
+   - Created `netlify.toml` with build configuration
+   - Build command: `npm run build`, publish: `dist`
+   - Node.js version: 20.19.0
+   - SPA redirects for React Router
+   - Security headers (X-Frame-Options, X-XSS-Protection)
+   - Static asset caching
+   - Created `public/_redirects` for backup SPA routing
+
+2. **Tally CORS Proxy Server** (`tally-proxy.mjs`)
+   - Standalone Node.js proxy server for CORS handling
+   - Runs on port 9001, forwards to Tally on port 9000
+   - Adds CORS headers for cross-origin requests
+   - Real-time logging of requests/responses
+   - Graceful error handling for Tally connection issues
+
+3. **TallyProxy.exe** - Windows Executable
+   - Built using `pkg` - standalone Windows executable
+   - No Node.js required on user's machine
+   - 36 MB, Windows 10/11 compatible
+   - Located in `public/TallyProxy.exe`
+
+4. **TallyService Production Mode** (`src/services/tallyService.js`)
+   - Environment detection (development vs production)
+   - Development: Uses Vite proxy `/api/tally`
+   - Production: Connects to CORS proxy on port 9001
+   - Console logging of connection mode
+
+5. **Landing Page Tally Connector Section** (`LandingPage.jsx`)
+   - New "Download" link in navigation
+   - Beautiful download section with:
+     - Download card with TallyProxy.exe button
+     - 3-step setup instructions
+     - Security note (data stays local)
+   - Responsive design for mobile
+
+6. **Landing Page CSS** (`landing.css`)
+   - `.tally-connector-section` styles
+   - `.connector-download-card` with glow effect
+   - `.setup-steps` with numbered circles
+   - `.connector-note` security badge
+   - Mobile responsive breakpoints
+
+#### Files Created:
+- `netlify.toml` - Netlify build configuration
+- `public/_redirects` - SPA routing fallback
+- `tally-proxy.mjs` - CORS proxy server source
+- `public/TallyProxy.exe` - Windows executable
+
+#### Files Modified:
+- `src/services/tallyService.js` - Added production mode detection
+- `src/pages/LandingPage.jsx` - Added download section
+- `src/landing.css` - Added Tally connector styles
+
+#### GitHub Repository:
+- Pushed to: https://github.com/Parzival048/booksneo
+- Branch: main
+
+---
+
+## 📋 PREVIOUS SESSION CHANGES (2025-12-29 23:03 IST)
 
 ### Email Verification & Security - COMPLETE ✅
 

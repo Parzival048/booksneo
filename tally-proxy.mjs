@@ -1,30 +1,27 @@
 /**
- * Tally CORS Proxy Server
+ * BooksNeo - Tally CORS Proxy Server
  * 
- * This proxy server allows the Netlify-hosted BooksNeo app to connect
- * to your local Tally Prime instance by handling CORS headers.
- * 
- * How it works:
- * 1. Your Netlify app connects to this proxy (localhost:9001)
- * 2. The proxy forwards requests to Tally Prime (localhost:9000)
- * 3. The proxy adds CORS headers so browsers allow the connection
+ * This proxy enables the cloud-hosted BooksNeo app to connect
+ * to your local Tally Prime installation by handling CORS headers.
  * 
  * USAGE:
  * 1. Make sure Tally Prime is running with ODBC enabled on port 9000
- * 2. Run this script: node tally-proxy.mjs
- * 3. The proxy will start on port 9001
- * 4. Update your app to connect to localhost:9001
+ * 2. Double-click TallyProxy.exe to start
+ * 3. Keep this window open while using BooksNeo
+ * 4. Press Ctrl+C or close the window to stop
  * 
  * @author BooksNeo Team
+ * @version 1.0.0
  */
 
 import http from 'http';
+import readline from 'readline';
 
 const TALLY_HOST = 'localhost';
 const TALLY_PORT = 9000;
 const PROXY_PORT = 9001;
 
-// CORS headers to allow cross-origin requests
+// CORS headers to allow cross-origin requests from BooksNeo
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -32,15 +29,34 @@ const corsHeaders = {
     'Access-Control-Max-Age': '86400',
 };
 
+// Statistics
+let stats = {
+    requestsTotal: 0,
+    requestsSuccess: 0,
+    requestsFailed: 0,
+    startTime: new Date()
+};
+
+// Clear console and show banner
+console.clear();
+console.log('\x1b[36m');
+console.log('╔═══════════════════════════════════════════════════════════════════╗');
+console.log('║                                                                   ║');
+console.log('║               🔄 BOOKSNEO TALLY PROXY SERVER                      ║');
+console.log('║                                                                   ║');
+console.log('╚═══════════════════════════════════════════════════════════════════╝');
+console.log('\x1b[0m');
+
 // Create the proxy server
 const server = http.createServer((req, res) => {
     const startTime = Date.now();
+    stats.requestsTotal++;
 
     // Handle CORS preflight requests
     if (req.method === 'OPTIONS') {
         res.writeHead(200, corsHeaders);
         res.end();
-        console.log(`[${new Date().toISOString()}] OPTIONS preflight - OK`);
+        console.log('\x1b[90m[' + new Date().toLocaleTimeString() + '] OPTIONS preflight - OK\x1b[0m');
         return;
     }
 
@@ -63,7 +79,8 @@ const server = http.createServer((req, res) => {
             },
         };
 
-        console.log(`[${new Date().toISOString()}] ${req.method} -> Tally:${TALLY_PORT}${req.url}`);
+        const timestamp = new Date().toLocaleTimeString();
+        console.log(`\x1b[33m[${timestamp}] → Sending request to Tally...\x1b[0m`);
 
         // Forward request to Tally
         const proxyReq = http.request(options, (proxyRes) => {
@@ -83,17 +100,25 @@ const server = http.createServer((req, res) => {
                 });
                 res.end(responseData);
 
-                // Log success
+                // Check success
                 const isSuccess = responseData.includes('<ENVELOPE>') && !responseData.includes('ERROR');
-                const status = isSuccess ? '✓' : '✗';
-                console.log(`  ${status} Response: ${proxyRes.statusCode} (${duration}ms, ${responseData.length} bytes)`);
+
+                if (isSuccess) {
+                    stats.requestsSuccess++;
+                    console.log(`\x1b[32m[${timestamp}] ✓ Success (${duration}ms, ${responseData.length} bytes)\x1b[0m`);
+                } else {
+                    stats.requestsFailed++;
+                    console.log(`\x1b[31m[${timestamp}] ✗ Response contains error (${duration}ms)\x1b[0m`);
+                }
             });
         });
 
         // Handle connection errors
         proxyReq.on('error', (error) => {
             const duration = Date.now() - startTime;
-            console.error(`  ✗ Error: ${error.message} (${duration}ms)`);
+            stats.requestsFailed++;
+
+            console.log(`\x1b[31m[${timestamp}] ✗ Connection failed: ${error.message} (${duration}ms)\x1b[0m`);
 
             // Send error response with CORS headers
             res.writeHead(502, {
@@ -115,42 +140,101 @@ const server = http.createServer((req, res) => {
 
 // Handle server errors
 server.on('error', (error) => {
+    console.log('\x1b[31m');
     if (error.code === 'EADDRINUSE') {
-        console.error(`\n❌ Port ${PROXY_PORT} is already in use.`);
-        console.error(`   Please close any other application using this port.\n`);
+        console.log('╔═══════════════════════════════════════════════════════════════════╗');
+        console.log('║  ❌ ERROR: Port ' + PROXY_PORT + ' is already in use!                         ║');
+        console.log('║                                                                   ║');
+        console.log('║  Another instance of TallyProxy may already be running.          ║');
+        console.log('║  Please close it first, then try again.                          ║');
+        console.log('╚═══════════════════════════════════════════════════════════════════╝');
     } else {
-        console.error('Server error:', error);
+        console.log('Server error:', error.message);
     }
-    process.exit(1);
+    console.log('\x1b[0m');
+    waitForKeyPress();
 });
 
 // Start the server
 server.listen(PROXY_PORT, () => {
-    console.log(`
-╔═══════════════════════════════════════════════════════════════════╗
-║                    🔄 TALLY CORS PROXY SERVER                      ║
-╠═══════════════════════════════════════════════════════════════════╣
-║                                                                   ║
-║  Proxy running on:    http://localhost:${PROXY_PORT}                     ║
-║  Forwarding to:       http://${TALLY_HOST}:${TALLY_PORT}                     ║
-║                                                                   ║
-║  ✅ Ready to accept requests from BooksNeo (Netlify)              ║
-║                                                                   ║
-╠═══════════════════════════════════════════════════════════════════╣
-║  REQUIREMENTS:                                                    ║
-║  • Tally Prime must be running with ODBC enabled on port 9000     ║
-║  • Keep this terminal open while using BooksNeo                   ║
-║                                                                   ║
-║  Press Ctrl+C to stop the proxy                                   ║
-╚═══════════════════════════════════════════════════════════════════╝
-`);
+    console.log('\x1b[32m  ✓ Proxy server started successfully!\x1b[0m');
+    console.log('');
+    console.log('\x1b[36m  ┌─────────────────────────────────────────────────────────────────┐');
+    console.log('  │                                                                 │');
+    console.log('  │   Proxy URL:     \x1b[1mhttp://localhost:' + PROXY_PORT + '\x1b[0m\x1b[36m                       │');
+    console.log('  │   Forwarding to: \x1b[1mhttp://' + TALLY_HOST + ':' + TALLY_PORT + '\x1b[0m\x1b[36m (Tally Prime)          │');
+    console.log('  │                                                                 │');
+    console.log('  └─────────────────────────────────────────────────────────────────┘\x1b[0m');
+    console.log('');
+    console.log('\x1b[33m  ⚠ REQUIREMENTS:\x1b[0m');
+    console.log('     • Tally Prime must be running');
+    console.log('     • ODBC Server must be enabled (F12 → Advanced Configuration)');
+    console.log('     • Keep this window open while using BooksNeo');
+    console.log('');
+    console.log('\x1b[90m  Press Ctrl+C to stop the proxy\x1b[0m');
+    console.log('');
+    console.log('\x1b[36m  ─────────────────────────── Request Log ───────────────────────────\x1b[0m');
+    console.log('');
 });
 
-// Graceful shutdown
+// Function to wait for key press before closing
+function waitForKeyPress() {
+    console.log('');
+    console.log('\x1b[33m  Press any key to exit...\x1b[0m');
+
+    // Set up readline to wait for any key press
+    if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.once('data', () => {
+            process.exit(0);
+        });
+    } else {
+        // Fallback: wait for Enter key
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+        rl.question('', () => {
+            rl.close();
+            process.exit(0);
+        });
+    }
+}
+
+// Graceful shutdown with summary
+function showSummaryAndExit() {
+    const uptime = Math.round((new Date() - stats.startTime) / 1000);
+    const uptimeStr = uptime >= 60 ? `${Math.floor(uptime / 60)}m ${uptime % 60}s` : `${uptime}s`;
+
+    console.log('');
+    console.log('\x1b[36m  ─────────────────────────── Session Summary ───────────────────────\x1b[0m');
+    console.log('');
+    console.log(`  📊 Total Requests:  ${stats.requestsTotal}`);
+    console.log(`  \x1b[32m✓ Successful:       ${stats.requestsSuccess}\x1b[0m`);
+    console.log(`  \x1b[31m✗ Failed:           ${stats.requestsFailed}\x1b[0m`);
+    console.log(`  ⏱ Uptime:           ${uptimeStr}`);
+    console.log('');
+    console.log('\x1b[32m  🛑 Proxy stopped. Goodbye!\x1b[0m');
+    console.log('');
+
+    waitForKeyPress();
+}
+
+// Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
-    console.log('\n\n🛑 Shutting down proxy server...');
     server.close(() => {
-        console.log('   Proxy stopped. Goodbye!\n');
-        process.exit(0);
+        showSummaryAndExit();
     });
 });
+
+// Handle uncaught exceptions (keep window open)
+process.on('uncaughtException', (error) => {
+    console.log('\x1b[31m');
+    console.log('  ❌ Unexpected Error:', error.message);
+    console.log('\x1b[0m');
+    waitForKeyPress();
+});
+
+// Keep process alive - important for the EXE
+process.stdin.resume();
