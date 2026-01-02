@@ -260,6 +260,8 @@ c:\scripts\last\ai-tally-sync\
 | **Date/Invoice Fix** | ✅ Complete | 2026-01-02 | formatTallyDate accepts actual dates |
 | **Ledger Search** | ✅ Complete | 2026-01-02 | Sales/Purchase dropdowns with search |
 | **AUTO Bank Template** | ✅ Complete | 2026-01-02 | AI-based column detection |
+| **AI PDF Parser** | ✅ Complete | 2026-01-02 | Falls back to OpenAI when structured fails |
+| **Banking UI AUTO** | ✅ Complete | 2026-01-02 | AUTO template highlighted with Recommended badge |
 
 Legend: ✅ Complete | ⏳ In Progress | ⬜ To Do | ⚠️ Limited
 
@@ -323,11 +325,17 @@ Parzival
    - Shows "No matching ledgers" when filter returns empty
    - Imported Search icon from lucide-react
 
-2. **AUTO Bank Template** (`constants.js`, `fileParser.js`)
+2. **AUTO Bank Template** (`constants.js`, `fileParser.js`, `Banking.jsx`)
    - Added AUTO template with `isAuto: true` flag
    - Expanded aliases with more common column name variations
    - Enhanced fuzzy matching with additional patterns
    - Handles generic "Amount" column detection
+   - AUTO template shown first in Banking module with "Recommended" badge
+
+3. **AI PDF Parser** (`pdfParser.js`, `openaiService.js`)
+   - Added `extractTransactionsFromPDFText()` using OpenAI
+   - pdfParser.js now falls back to AI when structured extraction fails
+   - Logs AI extraction progress to console
 
 #### Files Modified:
 - `src/services/tallyService.js` - Ledger sync, date formatting
@@ -335,6 +343,9 @@ Parzival
 - `src/pages/Purchase.jsx` - Ledger search feature
 - `src/utils/constants.js` - AUTO bank template
 - `src/services/fileParser.js` - Improved column detection
+- `src/pages/Banking.jsx` - AUTO template highlighted with "Recommended" badge
+- `src/services/openaiService.js` - Added `extractTransactionsFromPDFText()` for AI PDF parsing
+- `src/services/pdfParser.js` - Falls back to AI when structured extraction fails
 
 ---
 

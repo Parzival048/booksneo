@@ -1,10 +1,12 @@
 /**
  * AI Tally Sync - PDF Parser Service
  * Parses PDF bank statements using pdf.js
+ * Falls back to AI extraction when structured parsing fails
  */
 
 import * as pdfjsLib from 'pdfjs-dist';
 import { BANK_TEMPLATES } from '../utils/constants';
+import { extractTransactionsFromPDFText } from './openaiService';
 
 // Configure PDF.js worker for version 5.x
 // Use jsdelivr CDN with the exact version and correct path for v5.x build structure
@@ -31,6 +33,7 @@ const BANK_PDF_PATTERNS = {
 
 /**
  * Parse PDF file and extract text content
+ * Uses structured extraction first, falls back to AI if no transactions found
  * @param {File|ArrayBuffer} pdfInput - PDF file or ArrayBuffer
  * @returns {Promise<Object>} Parsed content with text and detected bank
  */
@@ -44,9 +47,13 @@ export const parsePDF = async (pdfInput) => {
             arrayBuffer = pdfInput;
         }
 
+        console.log('[PDF Parser] Loading PDF document...');
+
         // Load PDF document
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const numPages = pdf.numPages;
+
+        console.log('[PDF Parser] PDF has', numPages, 'pages');
 
         const allText = [];
         const allItems = [];
@@ -71,12 +78,26 @@ export const parsePDF = async (pdfInput) => {
         }
 
         const fullText = allText.join('\n');
+        console.log('[PDF Parser] Extracted', fullText.length, 'characters of text');
 
         // Detect bank from content
         const detectedBank = detectBankFromText(fullText);
+        console.log('[PDF Parser] Detected bank:', detectedBank);
 
-        // Extract structured data
-        const transactions = extractTransactionsFromPDF(allItems, detectedBank);
+        // Try structured extraction first
+        let transactions = extractTransactionsFromPDF(allItems, detectedBank);
+        console.log('[PDF Parser] Structured extraction found', transactions.length, 'transactions');
+
+        // If structured extraction failed, try AI extraction
+        if (transactions.length === 0 && fullText.length > 100) {
+            console.log('[PDF Parser] Structured parsing failed, trying AI extraction...');
+            try {
+                transactions = await extractTransactionsFromPDFText(fullText);
+                console.log('[PDF Parser] AI extraction found', transactions.length, 'transactions');
+            } catch (aiError) {
+                console.error('[PDF Parser] AI extraction failed:', aiError);
+            }
+        }
 
         return {
             success: true,
@@ -84,7 +105,8 @@ export const parsePDF = async (pdfInput) => {
             detectedBank,
             transactions,
             pageCount: numPages,
-            rawItems: allItems
+            rawItems: allItems,
+            usedAI: transactions.length > 0 && transactions[0]?.source === 'ai-pdf'
         };
     } catch (error) {
         console.error('PDF parsing error:', error);

@@ -400,8 +400,89 @@ export const validateApiKey = async () => {
     }
 };
 
+/**
+ * Extract transactions from raw PDF text using AI
+ * Used when structured PDF parsing fails
+ * @param {string} rawText - Raw text extracted from PDF
+ * @returns {Promise<Array>} Array of extracted transactions
+ */
+export const extractTransactionsFromPDFText = async (rawText) => {
+    if (!rawText || rawText.length < 50) {
+        return [];
+    }
+
+    // Truncate if too long
+    const text = rawText.length > 15000 ? rawText.substring(0, 15000) : rawText;
+
+    const systemPrompt = `You are an expert at parsing Indian bank statements. Extract transactions from the raw text.
+
+TASK: Parse the bank statement text and extract all transactions.
+
+OUTPUT FORMAT (JSON):
+{
+    "transactions": [
+        {
+            "date": "DD/MM/YYYY or DD-MM-YYYY format",
+            "description": "transaction description/narration",
+            "debit": number or 0,
+            "credit": number or 0,
+            "balance": number or 0,
+            "reference": "reference/cheque number if available"
+        }
+    ]
+}
+
+RULES:
+1. Extract ALL transactions you can find
+2. Date must be in a recognizable format
+3. Debit = money going out (withdrawal)
+4. Credit = money coming in (deposit)
+5. Skip headers, footers, and summary rows
+6. Return empty array if no transactions found
+7. Numbers should not have commas (convert 1,000.00 to 1000.00)`;
+
+    const userPrompt = `Extract transactions from this bank statement:\n\n${text}`;
+
+    try {
+        console.log('[AI PDF Parser] Sending text to AI for extraction...');
+        const response = await callOpenAI(systemPrompt, userPrompt);
+        const content = response.choices[0]?.message?.content;
+
+        if (!content) {
+            console.log('[AI PDF Parser] No content in response');
+            return [];
+        }
+
+        const parsed = JSON.parse(content);
+        const transactions = parsed.transactions || [];
+
+        console.log('[AI PDF Parser] Extracted', transactions.length, 'transactions');
+
+        // Normalize the transactions
+        return transactions.map((t, i) => ({
+            id: `ai-pdf-${Date.now()}-${i}`,
+            date: t.date || '',
+            dateRaw: t.date || '',
+            description: (t.description || '').trim(),
+            reference: t.reference || '',
+            debit: parseFloat(t.debit) || 0,
+            credit: parseFloat(t.credit) || 0,
+            balance: parseFloat(t.balance) || 0,
+            type: (parseFloat(t.credit) || 0) > 0 ? 'CREDIT' : 'DEBIT',
+            amount: parseFloat(t.credit) || parseFloat(t.debit) || 0,
+            source: 'ai-pdf',
+            status: 'pending'
+        })).filter(t => t.date && (t.debit > 0 || t.credit > 0));
+
+    } catch (error) {
+        console.error('[AI PDF Parser] Failed to extract transactions:', error);
+        return [];
+    }
+};
+
 export default {
     categorizeTransactions,
     getSingleSuggestion,
-    validateApiKey
+    validateApiKey,
+    extractTransactionsFromPDFText
 };

@@ -657,44 +657,80 @@ const Banking = () => {
                     <div className="card">
                         <div className="card-header">
                             <h3 className="card-title">Select Bank Template</h3>
+                            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', margin: 0 }}>
+                                Select your bank or use AI Auto-Detect for any format
+                            </p>
                         </div>
                         <div style={{
                             display: 'grid',
                             gridTemplateColumns: 'repeat(2, 1fr)',
                             gap: 'var(--space-3)'
                         }}>
-                            {Object.entries(BANK_TEMPLATES).map(([key, bank]) => (
-                                <div
-                                    key={key}
-                                    onClick={() => setSelectedBank(key)}
-                                    style={{
-                                        padding: 'var(--space-4)',
-                                        borderRadius: 'var(--radius-lg)',
-                                        border: selectedBank === key
-                                            ? '2px solid var(--primary-500)'
-                                            : '1px solid var(--border-default)',
-                                        background: selectedBank === key
-                                            ? 'rgba(99, 102, 241, 0.1)'
-                                            : 'var(--bg-glass)',
-                                        cursor: 'pointer',
-                                        transition: 'all var(--transition-fast)'
-                                    }}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <span style={{ fontSize: 'var(--text-2xl)' }}>{bank.logo}</span>
-                                        <div>
-                                            <p style={{ fontWeight: '500', marginBottom: 0 }}>{bank.name}</p>
-                                            <p style={{
-                                                fontSize: 'var(--text-xs)',
-                                                color: 'var(--text-muted)',
-                                                marginBottom: 0
-                                            }}>
-                                                {key}
-                                            </p>
+                            {/* Show AUTO template first with special styling */}
+                            {Object.entries(BANK_TEMPLATES)
+                                .sort(([a], [b]) => {
+                                    // AUTO first, then GENERIC, then alphabetical
+                                    if (a === 'AUTO') return -1;
+                                    if (b === 'AUTO') return 1;
+                                    if (a === 'GENERIC') return -1;
+                                    if (b === 'GENERIC') return 1;
+                                    return a.localeCompare(b);
+                                })
+                                .map(([key, bank]) => (
+                                    <div
+                                        key={key}
+                                        onClick={() => setSelectedBank(key)}
+                                        style={{
+                                            padding: 'var(--space-4)',
+                                            borderRadius: 'var(--radius-lg)',
+                                            border: selectedBank === key
+                                                ? '2px solid var(--primary-500)'
+                                                : key === 'AUTO'
+                                                    ? '2px solid var(--success-500)'
+                                                    : '1px solid var(--border-default)',
+                                            background: selectedBank === key
+                                                ? 'rgba(99, 102, 241, 0.1)'
+                                                : key === 'AUTO'
+                                                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(99, 102, 241, 0.1))'
+                                                    : 'var(--bg-glass)',
+                                            cursor: 'pointer',
+                                            transition: 'all var(--transition-fast)',
+                                            gridColumn: key === 'AUTO' ? 'span 2' : 'auto'
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span style={{ fontSize: 'var(--text-2xl)' }}>{bank.logo}</span>
+                                            <div style={{ flex: 1 }}>
+                                                <div className="flex items-center gap-2">
+                                                    <p style={{ fontWeight: '500', marginBottom: 0 }}>{bank.name}</p>
+                                                    {key === 'AUTO' && (
+                                                        <span style={{
+                                                            fontSize: 'var(--text-xs)',
+                                                            padding: '2px 8px',
+                                                            borderRadius: 'var(--radius-full)',
+                                                            background: 'var(--gradient-primary)',
+                                                            color: 'white',
+                                                            fontWeight: 600
+                                                        }}>
+                                                            Recommended
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p style={{
+                                                    fontSize: 'var(--text-xs)',
+                                                    color: 'var(--text-muted)',
+                                                    marginBottom: 0
+                                                }}>
+                                                    {key === 'AUTO'
+                                                        ? 'Works with any bank format using AI'
+                                                        : key === 'GENERIC'
+                                                            ? 'Standard format fallback'
+                                                            : key}
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
                         </div>
                     </div>
 
