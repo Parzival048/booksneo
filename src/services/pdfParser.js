@@ -80,6 +80,16 @@ export const parsePDF = async (pdfInput) => {
         const fullText = allText.join('\n');
         console.log('[PDF Parser] Extracted', fullText.length, 'characters of text');
 
+        if (fullText.length < 50) {
+            console.log('[PDF Parser] PDF text too short, may be image-based PDF');
+            return {
+                success: false,
+                error: 'PDF appears to be image-based or empty. Please use a text-based PDF statement.',
+                text: fullText,
+                transactions: []
+            };
+        }
+
         // Detect bank from content
         const detectedBank = detectBankFromText(fullText);
         console.log('[PDF Parser] Detected bank:', detectedBank);
@@ -88,15 +98,43 @@ export const parsePDF = async (pdfInput) => {
         let transactions = extractTransactionsFromPDF(allItems, detectedBank);
         console.log('[PDF Parser] Structured extraction found', transactions.length, 'transactions');
 
-        // If structured extraction failed, try AI extraction
-        if (transactions.length === 0 && fullText.length > 100) {
+        // If structured extraction failed, try AI extraction with chunking
+        if (transactions.length === 0) {
             console.log('[PDF Parser] Structured parsing failed, trying AI extraction...');
+
             try {
-                transactions = await extractTransactionsFromPDFText(fullText);
-                console.log('[PDF Parser] AI extraction found', transactions.length, 'transactions');
+                // Process in chunks for large documents
+                const chunkSize = 6000;
+                const chunks = [];
+
+                for (let i = 0; i < fullText.length; i += chunkSize) {
+                    chunks.push(fullText.substring(i, i + chunkSize));
+                }
+
+                console.log('[PDF Parser] Processing', chunks.length, 'text chunks');
+
+                // Process first 2 chunks only to avoid timeout
+                const chunksToProcess = chunks.slice(0, 2);
+
+                for (let i = 0; i < chunksToProcess.length; i++) {
+                    console.log('[PDF Parser] Processing chunk', i + 1, 'of', chunksToProcess.length);
+                    const chunkTransactions = await extractTransactionsFromPDFText(chunksToProcess[i]);
+                    if (chunkTransactions && chunkTransactions.length > 0) {
+                        transactions.push(...chunkTransactions);
+                        console.log('[PDF Parser] Chunk', i + 1, 'yielded', chunkTransactions.length, 'transactions');
+                    }
+                }
+
+                console.log('[PDF Parser] AI extraction total:', transactions.length, 'transactions');
             } catch (aiError) {
-                console.error('[PDF Parser] AI extraction failed:', aiError);
+                console.error('[PDF Parser] AI extraction failed:', aiError.message);
             }
+        }
+
+        // If still no transactions, log sample text for debugging
+        if (transactions.length === 0) {
+            console.log('[PDF Parser] No transactions extracted. Sample text (first 2000 chars):');
+            console.log(fullText.substring(0, 2000));
         }
 
         return {

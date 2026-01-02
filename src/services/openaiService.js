@@ -498,26 +498,16 @@ export const extractTransactionsFromPDFText = async (rawText) => {
         return [];
     }
 
-    // Limit text to 8000 chars to avoid response truncation
-    // This is conservative to ensure AI can fully process and return valid JSON
-    const text = rawText.length > 8000 ? rawText.substring(0, 8000) : rawText;
-    console.log('[AI PDF Parser] Processing', text.length, 'characters (truncated from', rawText.length, ')');
+    // Limit text to 4000 chars for reliable JSON responses
+    const text = rawText.length > 4000 ? rawText.substring(0, 4000) : rawText;
+    console.log('[AI PDF Parser] Processing', text.length, 'characters');
 
-    const systemPrompt = `You are an expert at parsing Indian bank statements. Extract transactions from the raw text.
+    // Very simple prompt for reliable responses
+    const systemPrompt = `Extract bank transactions from text. Return JSON only.
+Format: {"transactions":[{"date":"DD/MM/YYYY","description":"text","debit":0,"credit":0}]}
+Rules: Numbers without commas. Debit=withdrawal. Credit=deposit. Skip headers.`;
 
-TASK: Parse the bank statement text and extract transactions. Be concise.
-
-OUTPUT FORMAT (JSON):
-{"transactions":[{"date":"DD/MM/YYYY","description":"text","debit":0,"credit":0,"balance":0}]}
-
-RULES:
-1. Extract transactions with date, description, debit/credit amounts
-2. Use numbers without commas (1000.00 not 1,000.00)
-3. Debit = withdrawal, Credit = deposit
-4. Skip headers, footers, summaries
-5. Return VALID JSON only - no markdown, no extra text`;
-
-    const userPrompt = `Extract transactions from:\n\n${text}`;
+    const userPrompt = text;
 
     // Use longer timeout for PDF extraction (90 seconds)
     const PDF_TIMEOUT = 90000;
