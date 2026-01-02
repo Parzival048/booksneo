@@ -403,20 +403,28 @@ export const validateApiKey = async () => {
 /**
  * Extract transactions from raw PDF text using AI
  * Used when structured PDF parsing fails
+ * Uses a longer timeout since PDF text can be large
  * @param {string} rawText - Raw text extracted from PDF
  * @returns {Promise<Array>} Array of extracted transactions
  */
 export const extractTransactionsFromPDFText = async (rawText) => {
     if (!rawText || rawText.length < 50) {
+        console.log('[AI PDF Parser] Text too short, skipping');
         return [];
     }
 
-    // Truncate if too long
-    const text = rawText.length > 15000 ? rawText.substring(0, 15000) : rawText;
+    if (!API_KEY) {
+        console.log('[AI PDF Parser] No API key configured');
+        return [];
+    }
+
+    // Limit text to avoid token limits - take first 12000 chars
+    const text = rawText.length > 12000 ? rawText.substring(0, 12000) : rawText;
+    console.log('[AI PDF Parser] Processing', text.length, 'characters');
 
     const systemPrompt = `You are an expert at parsing Indian bank statements. Extract transactions from the raw text.
 
-TASK: Parse the bank statement text and extract all transactions.
+TASK: Parse the bank statement text and extract all transactions you can find.
 
 OUTPUT FORMAT (JSON):
 {
@@ -432,26 +440,69 @@ OUTPUT FORMAT (JSON):
     ]
 }
 
-RULES:
-1. Extract ALL transactions you can find
-2. Date must be in a recognizable format
-3. Debit = money going out (withdrawal)
-4. Credit = money coming in (deposit)
-5. Skip headers, footers, and summary rows
-6. Return empty array if no transactions found
-7. Numbers should not have commas (convert 1,000.00 to 1000.00)`;
+PARSING TIPS FOR INDIAN BANK STATEMENTS:
+1. Look for date patterns like DD/MM/YYYY, DD-MM-YYYY, DD MMM YYYY, DD.MM.YYYY
+2. Transaction description/narration often follows the date
+3. Amounts appear in columns: often Withdrawal/Debit and Deposit/Credit
+4. Balance column usually at the end of each row
+5. Skip header rows, page footers, opening/closing balance summaries
+6. Numbers may have commas (1,000.00) - remove commas from output
 
-    const userPrompt = `Extract transactions from this bank statement:\n\n${text}`;
+IMPORTANT:
+- If the PDF text is garbled or poorly formatted, try to extract what you can
+- Return empty transactions array if no clear transactions found
+- Debit = money going out (withdrawal)
+- Credit = money coming in (deposit)`;
+
+    const userPrompt = `Extract ALL transactions from this bank statement text:\n\n${text}`;
+
+    // Use longer timeout for PDF extraction (90 seconds)
+    const PDF_TIMEOUT = 90000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), PDF_TIMEOUT);
 
     try {
         console.log('[AI PDF Parser] Sending text to AI for extraction...');
-        const response = await callOpenAI(systemPrompt, userPrompt);
-        const content = response.choices[0]?.message?.content;
+        const startTime = Date.now();
+
+        const response = await fetch(OPENAI_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${API_KEY}`
+            },
+            body: JSON.stringify({
+                model: MODEL,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                ],
+                temperature: 0.1,
+                max_tokens: 4000, // More tokens for detailed extraction
+                response_format: { type: 'json_object' }
+            }),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        const duration = Date.now() - startTime;
+        console.log('[AI PDF Parser] API responded in', duration, 'ms');
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            console.error('[AI PDF Parser] API error:', error);
+            throw new Error(error.error?.message || `API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices[0]?.message?.content;
 
         if (!content) {
             console.log('[AI PDF Parser] No content in response');
             return [];
         }
+
+        console.log('[AI PDF Parser] Raw response:', content.substring(0, 200));
 
         const parsed = JSON.parse(content);
         const transactions = parsed.transactions || [];
@@ -465,17 +516,22 @@ RULES:
             dateRaw: t.date || '',
             description: (t.description || '').trim(),
             reference: t.reference || '',
-            debit: parseFloat(t.debit) || 0,
-            credit: parseFloat(t.credit) || 0,
-            balance: parseFloat(t.balance) || 0,
-            type: (parseFloat(t.credit) || 0) > 0 ? 'CREDIT' : 'DEBIT',
-            amount: parseFloat(t.credit) || parseFloat(t.debit) || 0,
+            debit: parseFloat(String(t.debit).replace(/,/g, '')) || 0,
+            credit: parseFloat(String(t.credit).replace(/,/g, '')) || 0,
+            balance: parseFloat(String(t.balance).replace(/,/g, '')) || 0,
+            type: (parseFloat(String(t.credit).replace(/,/g, '')) || 0) > 0 ? 'CREDIT' : 'DEBIT',
+            amount: parseFloat(String(t.credit).replace(/,/g, '')) || parseFloat(String(t.debit).replace(/,/g, '')) || 0,
             source: 'ai-pdf',
             status: 'pending'
         })).filter(t => t.date && (t.debit > 0 || t.credit > 0));
 
     } catch (error) {
-        console.error('[AI PDF Parser] Failed to extract transactions:', error);
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            console.error('[AI PDF Parser] Request timed out after 90 seconds');
+        } else {
+            console.error('[AI PDF Parser] Failed to extract transactions:', error.message);
+        }
         return [];
     }
 };

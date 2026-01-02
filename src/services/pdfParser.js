@@ -148,6 +148,8 @@ const detectBankFromText = (text) => {
 const extractTransactionsFromPDF = (items, bankKey) => {
     if (!items || items.length === 0) return [];
 
+    console.log('[PDF Parser] Starting structured extraction with', items.length, 'items');
+
     // Group items by approximate Y position (same row)
     const rowTolerance = 5;
     const rows = [];
@@ -181,6 +183,8 @@ const extractTransactionsFromPDF = (items, bankKey) => {
         rows.push(currentRow);
     }
 
+    console.log('[PDF Parser] Formed', rows.length, 'rows from items');
+
     // Convert rows to text
     const textRows = rows.map(row =>
         row.map(item => item.text.trim()).filter(t => t.length > 0)
@@ -188,24 +192,43 @@ const extractTransactionsFromPDF = (items, bankKey) => {
 
     // Find transaction rows based on patterns
     const transactions = [];
-    const datePattern = /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/;
-    const amountPattern = /^[\d,]+\.?\d*$/;
 
+    // Multiple date patterns for Indian bank statements
+    const datePatterns = [
+        /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/,          // DD/MM/YYYY or DD-MM-YYYY
+        /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2}$/,             // DD/MM/YY
+        /^\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4}$/,           // DD MMM YYYY (e.g., 01 Jan 2024)
+        /^\d{1,2}[A-Za-z]{3}\d{2,4}$/,                 // DDMmmYYYY (e.g., 01Jan2024)
+        /^\d{1,2}\.\d{1,2}\.\d{2,4}$/,                 // DD.MM.YYYY
+        /^\d{8}$/,                                      // DDMMYYYY or YYYYMMDD
+    ];
+
+    // Check if text matches any date pattern
+    const isDateLike = (text) => {
+        return datePatterns.some(pattern => pattern.test(text.trim()));
+    };
+
+    let skippedRows = 0;
     for (const row of textRows) {
-        const rowText = row.join(' ');
+        const rowText = row.join(' ').toLowerCase();
 
         // Skip header rows and empty rows
-        if (row.length < 3) continue;
-        if (rowText.toLowerCase().includes('date')) continue;
-        if (rowText.toLowerCase().includes('opening balance')) continue;
-        if (rowText.toLowerCase().includes('closing balance')) continue;
+        if (row.length < 3) {
+            skippedRows++;
+            continue;
+        }
+        if (rowText.includes('date') && (rowText.includes('description') || rowText.includes('particular'))) continue;
+        if (rowText.includes('opening balance')) continue;
+        if (rowText.includes('closing balance')) continue;
+        if (rowText.includes('page no')) continue;
+        if (rowText.includes('statement of')) continue;
 
-        // Look for date in first column
-        const hasDate = row.some(cell => datePattern.test(cell));
+        // Look for date in any column (first few)
+        const hasDate = row.slice(0, 3).some(cell => isDateLike(cell));
 
         // Look for amounts (debit/credit)
         const amounts = row.filter(cell => {
-            const cleaned = cell.replace(/,/g, '');
+            const cleaned = cell.replace(/,/g, '').replace(/Dr\.?|Cr\.?/gi, '').trim();
             return !isNaN(parseFloat(cleaned)) && parseFloat(cleaned) > 0;
         });
 
@@ -216,6 +239,8 @@ const extractTransactionsFromPDF = (items, bankKey) => {
             }
         }
     }
+
+    console.log('[PDF Parser] Extracted', transactions.length, 'transactions, skipped', skippedRows, 'short rows');
 
     return transactions;
 };
