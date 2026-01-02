@@ -8,7 +8,7 @@ import { useApp } from '../context/AppContext';
 import FileUpload from '../components/common/FileUpload';
 import {
     DollarSign, Plus, Send, Check, X, Edit2, Trash2,
-    RefreshCw, CheckCircle, AlertCircle, Building2
+    RefreshCw, CheckCircle, AlertCircle, Building2, Search
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/helpers';
 import { pushSalesEntry, batchPushSales } from '../services/tallyService';
@@ -20,6 +20,10 @@ const Sales = () => {
     const [isPushing, setIsPushing] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [selectedEntries, setSelectedEntries] = useState(new Set());
+
+    // Search state for ledger dropdowns
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [salesSearch, setSalesSearch] = useState('');
 
     const [formData, setFormData] = useState({
         date: new Date().toISOString().split('T')[0],
@@ -33,21 +37,39 @@ const Sales = () => {
         salesLedger: 'Sales Account'
     });
 
-    // Get customer ledgers from Tally
-    const customerLedgers = useMemo(() => {
+    // Get all customer ledgers from Tally
+    const allCustomerLedgers = useMemo(() => {
         return state.tally.ledgers.filter(l =>
             l.group?.toLowerCase().includes('sundry debtor') ||
             l.group?.toLowerCase().includes('debtors')
         );
     }, [state.tally.ledgers]);
 
-    // Get sales ledgers from Tally
-    const salesLedgers = useMemo(() => {
+    // Filtered customer ledgers based on search
+    const customerLedgers = useMemo(() => {
+        if (!customerSearch.trim()) return allCustomerLedgers;
+        const search = customerSearch.toLowerCase();
+        return allCustomerLedgers.filter(l =>
+            l.name.toLowerCase().includes(search)
+        );
+    }, [allCustomerLedgers, customerSearch]);
+
+    // Get all sales ledgers from Tally
+    const allSalesLedgers = useMemo(() => {
         return state.tally.ledgers.filter(l =>
             l.group?.toLowerCase().includes('sales') ||
             l.group?.toLowerCase().includes('income')
         );
     }, [state.tally.ledgers]);
+
+    // Filtered sales ledgers based on search
+    const salesLedgers = useMemo(() => {
+        if (!salesSearch.trim()) return allSalesLedgers;
+        const search = salesSearch.toLowerCase();
+        return allSalesLedgers.filter(l =>
+            l.name.toLowerCase().includes(search)
+        );
+    }, [allSalesLedgers, salesSearch]);
 
     // Summary stats
     const summary = useMemo(() => {
@@ -308,16 +330,36 @@ const Sales = () => {
 
                         <div className="form-group">
                             <label className="form-label">Customer Ledger (Tally)</label>
-                            <select
-                                className="form-select"
-                                value={formData.customerLedger}
-                                onChange={(e) => setFormData({ ...formData, customerLedger: e.target.value })}
-                            >
-                                <option value="">Use customer name as ledger</option>
-                                {customerLedgers.map(l => (
-                                    <option key={l.name} value={l.name}>{l.name}</option>
-                                ))}
-                            </select>
+                            <div style={{ position: 'relative' }}>
+                                <div style={{ position: 'relative', marginBottom: 'var(--space-2)' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Search ledgers..."
+                                        value={customerSearch}
+                                        onChange={(e) => setCustomerSearch(e.target.value)}
+                                        style={{ paddingLeft: '32px', fontSize: 'var(--text-sm)' }}
+                                    />
+                                </div>
+                                <select
+                                    className="form-select"
+                                    value={formData.customerLedger}
+                                    onChange={(e) => setFormData({ ...formData, customerLedger: e.target.value })}
+                                    size={customerLedgers.length > 5 ? 5 : undefined}
+                                    style={customerLedgers.length > 5 ? { height: 'auto' } : {}}
+                                >
+                                    <option value="">Use customer name as ledger</option>
+                                    {customerLedgers.map(l => (
+                                        <option key={l.name} value={l.name}>{l.name}</option>
+                                    ))}
+                                </select>
+                                {customerLedgers.length === 0 && customerSearch && (
+                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-1)' }}>
+                                        No matching ledgers found
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="form-group">
@@ -348,16 +390,29 @@ const Sales = () => {
 
                         <div className="form-group">
                             <label className="form-label">Sales Account (Tally)</label>
-                            <select
-                                className="form-select"
-                                value={formData.salesLedger}
-                                onChange={(e) => setFormData({ ...formData, salesLedger: e.target.value })}
-                            >
-                                <option value="Sales Account">Sales Account</option>
-                                {salesLedgers.map(l => (
-                                    <option key={l.name} value={l.name}>{l.name}</option>
-                                ))}
-                            </select>
+                            <div style={{ position: 'relative' }}>
+                                <div style={{ position: 'relative', marginBottom: 'var(--space-2)' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Search sales accounts..."
+                                        value={salesSearch}
+                                        onChange={(e) => setSalesSearch(e.target.value)}
+                                        style={{ paddingLeft: '32px', fontSize: 'var(--text-sm)' }}
+                                    />
+                                </div>
+                                <select
+                                    className="form-select"
+                                    value={formData.salesLedger}
+                                    onChange={(e) => setFormData({ ...formData, salesLedger: e.target.value })}
+                                >
+                                    <option value="Sales Account">Sales Account</option>
+                                    {salesLedgers.map(l => (
+                                        <option key={l.name} value={l.name}>{l.name}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
 
                         <div className="form-group">

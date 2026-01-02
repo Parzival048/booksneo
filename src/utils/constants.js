@@ -315,6 +315,30 @@ export const BANK_TEMPLATES = {
         },
         dateFormat: 'DD/MM/YYYY',
         skipRows: 0
+    },
+    AUTO: {
+        name: 'Auto-Detect (AI)',
+        logo: '🤖',
+        description: 'Let AI automatically detect columns from any bank statement format',
+        isAuto: true,
+        columns: {
+            date: 'Date',
+            description: 'Description',
+            reference: 'Reference',
+            debit: 'Debit',
+            credit: 'Credit',
+            balance: 'Balance'
+        },
+        aliases: {
+            date: ['Date', 'Transaction Date', 'Txn Date', 'Value Date', 'Trans Date', 'TXN DATE', 'DATE', 'Posting Date'],
+            description: ['Description', 'Narration', 'Particulars', 'Details', 'Transaction Details', 'NARRATION', 'DESCRIPTION', 'PARTICULARS', 'Remarks'],
+            reference: ['Reference', 'Ref No', 'Cheque No', 'Chq No', 'Reference No', 'CHQ NO', 'REF NO', 'UTR', 'Ref.No'],
+            debit: ['Debit', 'DR', 'Withdrawal', 'Withdrawal Amount', 'Debit Amount', 'DEBIT', 'DR AMOUNT', 'Withdrawals', 'Dr', 'Out'],
+            credit: ['Credit', 'CR', 'Deposit', 'Deposit Amount', 'Credit Amount', 'CREDIT', 'CR AMOUNT', 'Deposits', 'Cr', 'In'],
+            balance: ['Balance', 'Closing Balance', 'Available Balance', 'Running Balance', 'BALANCE', 'Net Balance']
+        },
+        dateFormat: 'AUTO',
+        skipRows: 0
     }
 };
 

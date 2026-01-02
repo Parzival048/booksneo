@@ -187,6 +187,7 @@ const parseCompaniesFromXML = (xml) => {
 
 /**
  * Get ledger list from Tally
+ * Uses a simpler Export Data query for better compatibility
  */
 export const getLedgers = async (companyName) => {
   try {
@@ -202,32 +203,26 @@ export const getLedgers = async (companyName) => {
       ];
     }
 
+    // Use simpler Export Data format for better Tally compatibility
     const xml = `<?xml version="1.0" encoding="utf-8"?>
 <ENVELOPE>
-  <HEADER>
-    <VERSION>1</VERSION>
-    <TALLYREQUEST>Export</TALLYREQUEST>
-    <TYPE>Collection</TYPE>
-    <ID>LedgerCollection</ID>
-  </HEADER>
-  <BODY>
-    <DESC>
-      <STATICVARIABLES>
-        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-        <SVCURRENTCOMPANY>${escapeXML(companyName)}</SVCURRENTCOMPANY>
-      </STATICVARIABLES>
-      <TDL>
-        <TDLMESSAGE>
-          <COLLECTION NAME="LedgerCollection">
-            <TYPE>Ledger</TYPE>
-            <NATIVEMETHOD>Name</NATIVEMETHOD>
-            <NATIVEMETHOD>Parent</NATIVEMETHOD>
-          </COLLECTION>
-        </TDLMESSAGE>
-      </TDL>
-    </DESC>
-  </BODY>
+<HEADER>
+<TALLYREQUEST>Export Data</TALLYREQUEST>
+</HEADER>
+<BODY>
+<EXPORTDATA>
+<REQUESTDESC>
+<REPORTNAME>List of Ledgers</REPORTNAME>
+<STATICVARIABLES>
+<SVCURRENTCOMPANY>${escapeXML(companyName)}</SVCURRENTCOMPANY>
+<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+</STATICVARIABLES>
+</REQUESTDESC>
+</EXPORTDATA>
+</BODY>
 </ENVELOPE>`;
+
+    console.log('[TallyService] Fetching ledgers for company:', companyName);
 
     const response = await fetch(TALLY_PROXY_URL, {
       method: 'POST',
@@ -236,10 +231,14 @@ export const getLedgers = async (companyName) => {
     });
 
     const xmlText = await response.text();
+    console.log('[TallyService] Ledger response length:', xmlText.length);
+
     const ledgers = parseLedgersFromXML(xmlText);
+    console.log('[TallyService] Parsed ledgers count:', ledgers.length);
     logger.info('Fetched ledgers from Tally', { count: ledgers.length });
     return ledgers;
   } catch (error) {
+    console.error('[TallyService] Failed to get ledgers:', error);
     logger.error('Failed to get ledgers', error);
     throw error;
   }
@@ -250,16 +249,47 @@ const parseLedgersFromXML = (xml) => {
   const doc = parser.parseFromString(xml, 'text/xml');
   const ledgers = [];
 
-  const ledgerNodes = doc.querySelectorAll('LEDGER');
-  ledgerNodes.forEach(node => {
-    const name = node.querySelector('NAME')?.textContent || node.getAttribute('NAME');
-    if (name) {
-      ledgers.push({
-        name: name.trim(),
-        group: node.querySelector('PARENT')?.textContent?.trim() || ''
-      });
-    }
-  });
+  // Try multiple possible node names for ledger data
+  const nodeSelectors = ['LEDGER', 'LEDGERNAME', 'DSPACCNAME', 'NAME'];
+
+  // First try LEDGER nodes (most common)
+  let ledgerNodes = doc.querySelectorAll('LEDGER');
+
+  if (ledgerNodes.length > 0) {
+    ledgerNodes.forEach(node => {
+      // Try to get name from NAME child or NAME attribute
+      let name = node.querySelector('NAME, LEDGERNAME, DSPACCNAME')?.textContent ||
+        node.getAttribute('NAME') ||
+        node.textContent;
+
+      if (name && name.trim() && !name.includes('<')) {
+        ledgers.push({
+          name: name.trim(),
+          group: node.querySelector('PARENT, LEDGERGROUP')?.textContent?.trim() ||
+            node.getAttribute('PARENT') || ''
+        });
+      }
+    });
+  }
+
+  // Also try TALLYMESSAGE > LEDGER pattern
+  if (ledgers.length === 0) {
+    const tallyMsgNodes = doc.querySelectorAll('TALLYMESSAGE LEDGER, REQUESTDATA LEDGER');
+    tallyMsgNodes.forEach(node => {
+      const name = node.getAttribute('NAME') || node.querySelector('NAME')?.textContent;
+      if (name && name.trim()) {
+        ledgers.push({
+          name: name.trim(),
+          group: node.querySelector('PARENT')?.textContent?.trim() || ''
+        });
+      }
+    });
+  }
+
+  // Log for debugging
+  if (ledgers.length === 0) {
+    console.log('[TallyService] No ledgers found in response. Sample XML:', xml.substring(0, 1000));
+  }
 
   return ledgers;
 };
@@ -437,11 +467,47 @@ export const ensureBasicLedgers = async (companyName) => {
 
 /**
  * Format date for Tally (YYYYMMDD)
- * Uses current date within the financial year
+ * Converts various date formats to Tally's required format
+ * @param {string|Date} date - Date to format
+ * @returns {string} Date in YYYYMMDD format
  */
 const formatTallyDate = (date) => {
-  // Use April 15, 2025 - safely within FY 2025-26 (Apr 2025 - Mar 2026)
-  return '20250415';
+  if (!date) {
+    // Default to today's date if no date provided
+    const today = new Date();
+    return today.toISOString().slice(0, 10).replace(/-/g, '');
+  }
+
+  try {
+    // Handle string dates (YYYY-MM-DD format from HTML date input)
+    if (typeof date === 'string') {
+      // If already in YYYYMMDD format
+      if (/^\d{8}$/.test(date)) {
+        return date;
+      }
+      // If in YYYY-MM-DD format
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return date.replace(/-/g, '');
+      }
+      // Try parsing as date
+      const parsed = new Date(date);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().slice(0, 10).replace(/-/g, '');
+      }
+    }
+
+    // Handle Date objects
+    if (date instanceof Date && !isNaN(date.getTime())) {
+      return date.toISOString().slice(0, 10).replace(/-/g, '');
+    }
+
+    // Fallback to today
+    console.warn('[TallyService] Could not parse date, using today:', date);
+    return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  } catch (e) {
+    console.warn('[TallyService] Date formatting error:', e);
+    return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  }
 };
 
 /**

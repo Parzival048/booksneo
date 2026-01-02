@@ -149,18 +149,19 @@ export const mapToTransactions = (rawData, bankTemplate) => {
     }
 
     const { columns, aliases, dateFormat } = template;
+    const isAutoMode = template.isAuto || bankTemplate === 'AUTO' || bankTemplate === 'GENERIC';
 
-    // Smart column finder - uses aliases if primary column not found
+    // Enhanced smart column finder with broader fuzzy matching for AUTO mode
     const findColumn = (row, columnKey) => {
         const rowKeys = Object.keys(row);
 
-        // First try the primary column name
-        const primaryMatch = rowKeys.find(k =>
+        // First try exact match (case-insensitive)
+        const exactMatch = rowKeys.find(k =>
             k.trim().toLowerCase() === columns[columnKey].toLowerCase()
         );
-        if (primaryMatch) return row[primaryMatch];
+        if (exactMatch && row[exactMatch]) return row[exactMatch];
 
-        // Then try aliases if available
+        // Then try aliases if available (case-insensitive)
         if (aliases && aliases[columnKey]) {
             for (const alias of aliases[columnKey]) {
                 const match = rowKeys.find(k =>
@@ -170,14 +171,14 @@ export const mapToTransactions = (rawData, bankTemplate) => {
             }
         }
 
-        // Finally try fuzzy matching for common patterns
+        // For AUTO/GENERIC mode, use aggressive fuzzy matching
         const fuzzyPatterns = {
-            date: ['date', 'txn', 'trans', 'value'],
-            description: ['narr', 'desc', 'part', 'detail'],
-            reference: ['ref', 'chq', 'cheque'],
-            debit: ['debit', 'dr', 'withdraw'],
-            credit: ['credit', 'cr', 'deposit'],
-            balance: ['balance', 'bal', 'closing']
+            date: ['date', 'txn', 'trans', 'value', 'posting', 'time', 'dt'],
+            description: ['narr', 'desc', 'part', 'detail', 'remark', 'memo', 'particular'],
+            reference: ['ref', 'chq', 'cheque', 'utr', 'check', 'trx', 'txn id'],
+            debit: ['debit', 'dr', 'withdraw', 'out', 'payment', 'paid'],
+            credit: ['credit', 'cr', 'deposit', 'in', 'receipt', 'received'],
+            balance: ['balance', 'bal', 'closing', 'running', 'available', 'net']
         };
 
         if (fuzzyPatterns[columnKey]) {
@@ -185,12 +186,26 @@ export const mapToTransactions = (rawData, bankTemplate) => {
                 const match = rowKeys.find(k =>
                     k.trim().toLowerCase().includes(pattern)
                 );
-                if (match && row[match]) return row[match];
+                if (match && row[match] !== undefined && row[match] !== '') return row[match];
+            }
+        }
+
+        // For debit/credit, also check for amount column and determine by sign
+        if ((columnKey === 'debit' || columnKey === 'credit') && isAutoMode) {
+            // Look for a generic "Amount" column
+            const amountMatch = rowKeys.find(k =>
+                k.trim().toLowerCase().includes('amount') &&
+                !k.trim().toLowerCase().includes('debit') &&
+                !k.trim().toLowerCase().includes('credit')
+            );
+            if (amountMatch && row[amountMatch]) {
+                // This will be handled in the mapping logic
+                return columnKey === 'debit' ? `__AMOUNT__:${amountMatch}` : '';
             }
         }
 
         return '';
-    }
+    };
 
     // Log sample column matching for debugging
     if (rawData.length > 0) {

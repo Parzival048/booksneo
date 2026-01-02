@@ -256,6 +256,10 @@ c:\scripts\last\ai-tally-sync\
 | **GitHub Push** | ✅ Complete | 2026-01-01 | Parzival048/booksneo |
 | **TallyProxy v2.0** | ✅ Complete | 2026-01-02 | CommonJS format, stable EXE |
 | **Remove Settings Menu** | ✅ Complete | 2026-01-02 | Removed from Header dropdown |
+| **Ledger Sync Fix** | ✅ Complete | 2026-01-02 | Export Data query, improved parser |
+| **Date/Invoice Fix** | ✅ Complete | 2026-01-02 | formatTallyDate accepts actual dates |
+| **Ledger Search** | ✅ Complete | 2026-01-02 | Sales/Purchase dropdowns with search |
+| **AUTO Bank Template** | ✅ Complete | 2026-01-02 | AI-based column detection |
 
 Legend: ✅ Complete | ⏳ In Progress | ⬜ To Do | ⚠️ Limited
 
@@ -293,7 +297,48 @@ Parzival
 
 ---
 
-## 📋 RECENT SESSION CHANGES (2026-01-02 00:16 IST)
+## 📋 RECENT SESSION CHANGES (2026-01-02 15:55 IST)
+
+### Bug Fixes & Feature Implementation - COMPLETE ✅
+
+#### Bugs Fixed:
+
+1. **Ledger Sync Issue** (`tallyService.js`)
+   - Changed XML query from TDL Collection to simpler Export Data format
+   - Enhanced `parseLedgersFromXML` with multiple node selectors
+   - Added console logging for debugging ledger fetching
+
+2. **Date Not Stored** (`tallyService.js`)
+   - Rewrote `formatTallyDate()` to accept actual entry dates
+   - Supports YYYY-MM-DD, YYYYMMDD, and Date objects
+   - No longer hardcoded to a fixed date
+
+3. **Invoice Number** - Already working in XML, date was the real issue
+
+#### Features Implemented:
+
+1. **Ledger Search in Sales/Purchase** (`Sales.jsx`, `Purchase.jsx`)
+   - Added search inputs above ledger dropdowns
+   - Real-time filtering as user types
+   - Shows "No matching ledgers" when filter returns empty
+   - Imported Search icon from lucide-react
+
+2. **AUTO Bank Template** (`constants.js`, `fileParser.js`)
+   - Added AUTO template with `isAuto: true` flag
+   - Expanded aliases with more common column name variations
+   - Enhanced fuzzy matching with additional patterns
+   - Handles generic "Amount" column detection
+
+#### Files Modified:
+- `src/services/tallyService.js` - Ledger sync, date formatting
+- `src/pages/Sales.jsx` - Ledger search feature
+- `src/pages/Purchase.jsx` - Ledger search feature
+- `src/utils/constants.js` - AUTO bank template
+- `src/services/fileParser.js` - Improved column detection
+
+---
+
+## 📋 PREVIOUS SESSION CHANGES (2026-01-02 00:16 IST)
 
 ### TallyProxy v2.0 & UI Updates - COMPLETE ✅
 

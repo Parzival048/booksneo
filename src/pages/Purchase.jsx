@@ -8,7 +8,7 @@ import { useApp } from '../context/AppContext';
 import FileUpload from '../components/common/FileUpload';
 import {
     ShoppingCart, Plus, Send, Check, X, Edit2, Trash2,
-    RefreshCw, CheckCircle, AlertCircle, Upload
+    RefreshCw, CheckCircle, AlertCircle, Upload, Search
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils/helpers';
 import { pushPurchaseEntry, batchPushPurchases } from '../services/tallyService';
@@ -19,6 +19,10 @@ const Purchase = () => {
     const [showAddForm, setShowAddForm] = useState(false);
     const [isPushing, setIsPushing] = useState(false);
     const [editingId, setEditingId] = useState(null);
+
+    // Search state for ledger dropdowns
+    const [vendorSearch, setVendorSearch] = useState('');
+    const [purchaseSearch, setPurchaseSearch] = useState('');
 
     const [formData, setFormData] = useState({
         date: new Date().toISOString().split('T')[0],
@@ -32,21 +36,39 @@ const Purchase = () => {
         purchaseLedger: 'Purchase Account'
     });
 
-    // Get vendor ledgers from Tally
-    const vendorLedgers = useMemo(() => {
+    // Get all vendor ledgers from Tally
+    const allVendorLedgers = useMemo(() => {
         return state.tally.ledgers.filter(l =>
             l.group?.toLowerCase().includes('sundry creditor') ||
             l.group?.toLowerCase().includes('creditors')
         );
     }, [state.tally.ledgers]);
 
-    // Get purchase ledgers from Tally
-    const purchaseLedgers = useMemo(() => {
+    // Filtered vendor ledgers based on search
+    const vendorLedgers = useMemo(() => {
+        if (!vendorSearch.trim()) return allVendorLedgers;
+        const search = vendorSearch.toLowerCase();
+        return allVendorLedgers.filter(l =>
+            l.name.toLowerCase().includes(search)
+        );
+    }, [allVendorLedgers, vendorSearch]);
+
+    // Get all purchase ledgers from Tally
+    const allPurchaseLedgers = useMemo(() => {
         return state.tally.ledgers.filter(l =>
             l.group?.toLowerCase().includes('purchase') ||
             l.group?.toLowerCase().includes('expense')
         );
     }, [state.tally.ledgers]);
+
+    // Filtered purchase ledgers based on search
+    const purchaseLedgers = useMemo(() => {
+        if (!purchaseSearch.trim()) return allPurchaseLedgers;
+        const search = purchaseSearch.toLowerCase();
+        return allPurchaseLedgers.filter(l =>
+            l.name.toLowerCase().includes(search)
+        );
+    }, [allPurchaseLedgers, purchaseSearch]);
 
     // Summary stats
     const summary = useMemo(() => {
@@ -306,16 +328,36 @@ const Purchase = () => {
 
                         <div className="form-group">
                             <label className="form-label">Vendor Ledger (Tally)</label>
-                            <select
-                                className="form-select"
-                                value={formData.vendorLedger}
-                                onChange={(e) => setFormData({ ...formData, vendorLedger: e.target.value })}
-                            >
-                                <option value="">Use vendor name as ledger</option>
-                                {vendorLedgers.map(l => (
-                                    <option key={l.name} value={l.name}>{l.name}</option>
-                                ))}
-                            </select>
+                            <div style={{ position: 'relative' }}>
+                                <div style={{ position: 'relative', marginBottom: 'var(--space-2)' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Search vendors..."
+                                        value={vendorSearch}
+                                        onChange={(e) => setVendorSearch(e.target.value)}
+                                        style={{ paddingLeft: '32px', fontSize: 'var(--text-sm)' }}
+                                    />
+                                </div>
+                                <select
+                                    className="form-select"
+                                    value={formData.vendorLedger}
+                                    onChange={(e) => setFormData({ ...formData, vendorLedger: e.target.value })}
+                                    size={vendorLedgers.length > 5 ? 5 : undefined}
+                                    style={vendorLedgers.length > 5 ? { height: 'auto' } : {}}
+                                >
+                                    <option value="">Use vendor name as ledger</option>
+                                    {vendorLedgers.map(l => (
+                                        <option key={l.name} value={l.name}>{l.name}</option>
+                                    ))}
+                                </select>
+                                {vendorLedgers.length === 0 && vendorSearch && (
+                                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-1)' }}>
+                                        No matching ledgers found
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="form-group">
@@ -346,16 +388,29 @@ const Purchase = () => {
 
                         <div className="form-group">
                             <label className="form-label">Purchase Account (Tally)</label>
-                            <select
-                                className="form-select"
-                                value={formData.purchaseLedger}
-                                onChange={(e) => setFormData({ ...formData, purchaseLedger: e.target.value })}
-                            >
-                                <option value="Purchase Account">Purchase Account</option>
-                                {purchaseLedgers.map(l => (
-                                    <option key={l.name} value={l.name}>{l.name}</option>
-                                ))}
-                            </select>
+                            <div style={{ position: 'relative' }}>
+                                <div style={{ position: 'relative', marginBottom: 'var(--space-2)' }}>
+                                    <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Search purchase accounts..."
+                                        value={purchaseSearch}
+                                        onChange={(e) => setPurchaseSearch(e.target.value)}
+                                        style={{ paddingLeft: '32px', fontSize: 'var(--text-sm)' }}
+                                    />
+                                </div>
+                                <select
+                                    className="form-select"
+                                    value={formData.purchaseLedger}
+                                    onChange={(e) => setFormData({ ...formData, purchaseLedger: e.target.value })}
+                                >
+                                    <option value="Purchase Account">Purchase Account</option>
+                                    {purchaseLedgers.map(l => (
+                                        <option key={l.name} value={l.name}>{l.name}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
 
                         <div className="form-group">
