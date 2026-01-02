@@ -34,6 +34,23 @@ const Reports = () => {
 
     const { transactions } = state.banking;
 
+    // Helper to safely parse dates
+    const safeParseDate = (dateStr) => {
+        if (!dateStr) return null;
+
+        // Handle DD/MM/YYYY format (common in Indian statements)
+        if (typeof dateStr === 'string') {
+            const ddmmyyyyMatch = dateStr.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+            if (ddmmyyyyMatch) {
+                const [, day, month, year] = ddmmyyyyMatch;
+                return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            }
+        }
+
+        const date = new Date(dateStr);
+        return isNaN(date.getTime()) ? null : date;
+    };
+
     // Calculate analytics data
     const analytics = useMemo(() => {
         if (!transactions || transactions.length === 0) {
@@ -51,9 +68,14 @@ const Reports = () => {
         // Filter by selected month if applicable
         const filteredTxns = selectedPeriod === 'all' ? transactions :
             transactions.filter(t => {
-                const txnDate = new Date(t.date);
-                const txnMonth = txnDate.toISOString().slice(0, 7);
-                return txnMonth === selectedMonth;
+                const txnDate = safeParseDate(t.date);
+                if (!txnDate) return false;
+                try {
+                    const txnMonth = txnDate.toISOString().slice(0, 7);
+                    return txnMonth === selectedMonth;
+                } catch (e) {
+                    return false;
+                }
             });
 
         // Total inflow and outflow
@@ -76,13 +98,18 @@ const Reports = () => {
         // Monthly data for trend chart
         const monthlyData = {};
         transactions.forEach(t => {
-            const txnDate = new Date(t.date);
-            const month = txnDate.toISOString().slice(0, 7);
-            if (!monthlyData[month]) {
-                monthlyData[month] = { credit: 0, debit: 0 };
+            const txnDate = safeParseDate(t.date);
+            if (!txnDate) return;
+            try {
+                const month = txnDate.toISOString().slice(0, 7);
+                if (!monthlyData[month]) {
+                    monthlyData[month] = { credit: 0, debit: 0 };
+                }
+                monthlyData[month].credit += t.credit || 0;
+                monthlyData[month].debit += t.debit || 0;
+            } catch (e) {
+                // Skip invalid dates
             }
-            monthlyData[month].credit += t.credit || 0;
-            monthlyData[month].debit += t.debit || 0;
         });
 
         // Top expenses
