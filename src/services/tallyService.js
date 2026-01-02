@@ -614,7 +614,25 @@ const createVoucherXML = (transaction, companyName, bankLedger, partyLedger) => 
   const isCredit = transaction.credit > 0 || transaction.type === 'CREDIT';
   const voucherType = isCredit ? 'Receipt' : 'Payment';
   const amount = Math.abs(transaction.credit || transaction.debit || transaction.amount || 0);
-  const date = formatTallyDate(transaction.date);
+
+  // Get date from transaction - check multiple possible fields
+  const rawDate = transaction.date || transaction.dateRaw || transaction.txnDate || transaction.transactionDate;
+
+  // Log date debugging info
+  if (!rawDate) {
+    console.warn('[TallyService] Transaction has no date field:', {
+      fields: Object.keys(transaction),
+      date: transaction.date,
+      dateRaw: transaction.dateRaw,
+      description: (transaction.description || '').substring(0, 30)
+    });
+  }
+
+  const date = formatTallyDate(rawDate);
+
+  // Log formatted date
+  console.log('[TallyService] Voucher date:', { input: rawDate, formatted: date, description: (transaction.description || '').substring(0, 30) });
+
   const narration = escapeXML(transaction.description || 'Bank Transaction');
   const bank = escapeXML(bankLedger || 'Bank Account');
   const party = escapeXML(partyLedger || (isCredit ? 'Sundry Debtors' : 'Sundry Creditors'));
