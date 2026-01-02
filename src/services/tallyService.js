@@ -187,7 +187,7 @@ const parseCompaniesFromXML = (xml) => {
 
 /**
  * Get ledger list from Tally
- * Uses a simpler Export Data query for better compatibility
+ * Uses TDL Collection format for proper ledger fetching
  */
 export const getLedgers = async (companyName) => {
   try {
@@ -203,7 +203,7 @@ export const getLedgers = async (companyName) => {
       ];
     }
 
-    // Use simpler Export Data format for better Tally compatibility
+    // Use TDL Collection format - this is the standard way to fetch ledgers in Tally Prime
     const xml = `<?xml version="1.0" encoding="utf-8"?>
 <ENVELOPE>
 <HEADER>
@@ -212,11 +212,38 @@ export const getLedgers = async (companyName) => {
 <BODY>
 <EXPORTDATA>
 <REQUESTDESC>
-<REPORTNAME>List of Ledgers</REPORTNAME>
 <STATICVARIABLES>
 <SVCURRENTCOMPANY>${escapeXML(companyName)}</SVCURRENTCOMPANY>
-<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
 </STATICVARIABLES>
+<REPORTNAME>Ledger</REPORTNAME>
+<TDL>
+<TDLMESSAGE>
+<REPORT NAME="Ledger" ISMODIFY="No">
+<FORMS>Ledger</FORMS>
+</REPORT>
+<FORM NAME="Ledger" ISMODIFY="No">
+<TOPPARTS>Ledger</TOPPARTS>
+</FORM>
+<PART NAME="Ledger" ISMODIFY="No">
+<LINES>LedgerDtl</LINES>
+<REPEAT>LedgerDtl : LedgerCollection</REPEAT>
+<SCROLLED>Vertical</SCROLLED>
+</PART>
+<LINE NAME="LedgerDtl" ISMODIFY="No">
+<FIELDS>LedgerName,LedgerParent</FIELDS>
+</LINE>
+<FIELD NAME="LedgerName" ISMODIFY="No">
+<SET>$NAME</SET>
+</FIELD>
+<FIELD NAME="LedgerParent" ISMODIFY="No">
+<SET>$PARENT</SET>
+</FIELD>
+<COLLECTION NAME="LedgerCollection" ISMODIFY="No">
+<TYPE>Ledger</TYPE>
+<FETCH>NAME,PARENT</FETCH>
+</COLLECTION>
+</TDLMESSAGE>
+</TDL>
 </REQUESTDESC>
 </EXPORTDATA>
 </BODY>
@@ -233,6 +260,13 @@ export const getLedgers = async (companyName) => {
     const xmlText = await response.text();
     console.log('[TallyService] Ledger response length:', xmlText.length);
 
+    // Log first 500 chars for debugging
+    if (xmlText.length < 500) {
+      console.log('[TallyService] Full response:', xmlText);
+    } else {
+      console.log('[TallyService] Response preview:', xmlText.substring(0, 500));
+    }
+
     const ledgers = parseLedgersFromXML(xmlText);
     console.log('[TallyService] Parsed ledgers count:', ledgers.length);
     logger.info('Fetched ledgers from Tally', { count: ledgers.length });
@@ -248,47 +282,81 @@ const parseLedgersFromXML = (xml) => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, 'text/xml');
   const ledgers = [];
+  const seenNames = new Set(); // Avoid duplicates
 
-  // Try multiple possible node names for ledger data
-  const nodeSelectors = ['LEDGER', 'LEDGERNAME', 'DSPACCNAME', 'NAME'];
+  // Helper to add unique ledger
+  const addLedger = (name, group) => {
+    if (name && name.trim() && !name.includes('<') && !seenNames.has(name.trim().toLowerCase())) {
+      seenNames.add(name.trim().toLowerCase());
+      ledgers.push({
+        name: name.trim(),
+        group: group?.trim() || ''
+      });
+    }
+  };
 
-  // First try LEDGER nodes (most common)
-  let ledgerNodes = doc.querySelectorAll('LEDGER');
-
-  if (ledgerNodes.length > 0) {
-    ledgerNodes.forEach(node => {
-      // Try to get name from NAME child or NAME attribute
-      let name = node.querySelector('NAME, LEDGERNAME, DSPACCNAME')?.textContent ||
-        node.getAttribute('NAME') ||
-        node.textContent;
-
-      if (name && name.trim() && !name.includes('<')) {
-        ledgers.push({
-          name: name.trim(),
-          group: node.querySelector('PARENT, LEDGERGROUP')?.textContent?.trim() ||
-            node.getAttribute('PARENT') || ''
-        });
-      }
+  // Try TDL format first: LEDGERDTL with LEDGERNAME and LEDGERPARENT
+  const ledgerDtlNodes = doc.querySelectorAll('LEDGERDTL');
+  if (ledgerDtlNodes.length > 0) {
+    console.log('[TallyService] Found LEDGERDTL nodes:', ledgerDtlNodes.length);
+    ledgerDtlNodes.forEach(node => {
+      const name = node.querySelector('LEDGERNAME')?.textContent;
+      const group = node.querySelector('LEDGERPARENT')?.textContent;
+      addLedger(name, group);
     });
+  }
+
+  // Also try LEDGER nodes (direct format)
+  if (ledgers.length === 0) {
+    const ledgerNodes = doc.querySelectorAll('LEDGER');
+    if (ledgerNodes.length > 0) {
+      console.log('[TallyService] Found LEDGER nodes:', ledgerNodes.length);
+      ledgerNodes.forEach(node => {
+        // Try to get name from NAME child or NAME attribute
+        const name = node.querySelector('NAME, LEDGERNAME, DSPACCNAME')?.textContent ||
+          node.getAttribute('NAME') ||
+          node.textContent;
+        const group = node.querySelector('PARENT, LEDGERGROUP')?.textContent ||
+          node.getAttribute('PARENT');
+        addLedger(name, group);
+      });
+    }
   }
 
   // Also try TALLYMESSAGE > LEDGER pattern
   if (ledgers.length === 0) {
     const tallyMsgNodes = doc.querySelectorAll('TALLYMESSAGE LEDGER, REQUESTDATA LEDGER');
+    console.log('[TallyService] Found TALLYMESSAGE LEDGER nodes:', tallyMsgNodes.length);
     tallyMsgNodes.forEach(node => {
       const name = node.getAttribute('NAME') || node.querySelector('NAME')?.textContent;
-      if (name && name.trim()) {
-        ledgers.push({
-          name: name.trim(),
-          group: node.querySelector('PARENT')?.textContent?.trim() || ''
-        });
-      }
+      const group = node.querySelector('PARENT')?.textContent;
+      addLedger(name, group);
     });
   }
 
-  // Log for debugging
+  // Try even more flexible: any element with NAME and PARENT
   if (ledgers.length === 0) {
-    console.log('[TallyService] No ledgers found in response. Sample XML:', xml.substring(0, 1000));
+    // Look for any NAME elements that might contain ledger names
+    const allNames = doc.querySelectorAll('NAME');
+    console.log('[TallyService] Fallback: Found NAME elements:', allNames.length);
+    allNames.forEach(nameNode => {
+      const name = nameNode.textContent;
+      const parent = nameNode.parentElement;
+      const group = parent?.querySelector('PARENT')?.textContent || '';
+      addLedger(name, group);
+    });
+  }
+
+  // Log detailed debug info
+  if (ledgers.length === 0) {
+    console.log('[TallyService] No ledgers found in response. Sample XML:', xml.substring(0, 1500));
+    // Try to log element names for debugging
+    const allElements = doc.querySelectorAll('*');
+    const elementNames = new Set();
+    allElements.forEach(el => elementNames.add(el.tagName));
+    console.log('[TallyService] Element types in response:', Array.from(elementNames).join(', '));
+  } else {
+    console.log('[TallyService] Successfully parsed ledgers:', ledgers.length, 'First 3:', ledgers.slice(0, 3).map(l => l.name));
   }
 
   return ledgers;
