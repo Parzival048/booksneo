@@ -401,8 +401,88 @@ export const validateApiKey = async () => {
 };
 
 /**
+ * Try to repair and parse malformed JSON from AI response
+ * Handles cases where JSON is truncated or has minor formatting issues
+ */
+const repairAndParseJSON = (content) => {
+    if (!content) return { transactions: [] };
+
+    // First, try direct parsing
+    try {
+        return JSON.parse(content);
+    } catch (e) {
+        console.log('[AI PDF Parser] JSON parsing failed, attempting repair...');
+    }
+
+    // Try to find and extract the transactions array
+    let repaired = content;
+
+    // Common fixes for truncated JSON
+    // 1. If transactions array is truncated, try to close it properly
+    const transactionsMatch = content.match(/"transactions"\s*:\s*\[/);
+    if (transactionsMatch) {
+        // Count brackets to see if array is properly closed
+        const startIdx = content.indexOf('[', transactionsMatch.index);
+        let bracketCount = 0;
+        let lastValidPos = startIdx;
+
+        for (let i = startIdx; i < content.length; i++) {
+            if (content[i] === '[') bracketCount++;
+            if (content[i] === ']') bracketCount--;
+            if (content[i] === '}' && bracketCount === 0) {
+                // Found valid end of an object
+                lastValidPos = i + 1;
+            }
+        }
+
+        // If array not properly closed, try to close it
+        if (bracketCount > 0) {
+            // Find last valid transaction object
+            const lastBraceMatch = content.lastIndexOf('}');
+            if (lastBraceMatch > startIdx) {
+                repaired = content.substring(0, lastBraceMatch + 1) + ']}';
+            }
+        }
+    }
+
+    // Try parsing repaired version
+    try {
+        return JSON.parse(repaired);
+    } catch (e) {
+        console.log('[AI PDF Parser] Repair attempt 1 failed');
+    }
+
+    // More aggressive repair - extract individual transaction objects
+    try {
+        const transactionRegex = /\{\s*"date"\s*:\s*"[^"]*"[^}]*\}/g;
+        const matches = content.match(transactionRegex) || [];
+        console.log('[AI PDF Parser] Found', matches.length, 'transaction objects via regex');
+
+        const transactions = [];
+        for (const match of matches) {
+            try {
+                const obj = JSON.parse(match);
+                if (obj.date) {
+                    transactions.push(obj);
+                }
+            } catch (parseErr) {
+                // Skip malformed individual objects
+            }
+        }
+
+        if (transactions.length > 0) {
+            console.log('[AI PDF Parser] Recovered', transactions.length, 'transactions via regex extraction');
+            return { transactions };
+        }
+    } catch (e) {
+        console.log('[AI PDF Parser] Regex extraction failed');
+    }
+
+    return { transactions: [] };
+};
+
+/**
  * Extract transactions from raw PDF text using AI
- * Used when structured PDF parsing fails
  * Uses a longer timeout since PDF text can be large
  * @param {string} rawText - Raw text extracted from PDF
  * @returns {Promise<Array>} Array of extracted transactions
@@ -418,43 +498,26 @@ export const extractTransactionsFromPDFText = async (rawText) => {
         return [];
     }
 
-    // Limit text to avoid token limits - take first 12000 chars
-    const text = rawText.length > 12000 ? rawText.substring(0, 12000) : rawText;
-    console.log('[AI PDF Parser] Processing', text.length, 'characters');
+    // Limit text to 8000 chars to avoid response truncation
+    // This is conservative to ensure AI can fully process and return valid JSON
+    const text = rawText.length > 8000 ? rawText.substring(0, 8000) : rawText;
+    console.log('[AI PDF Parser] Processing', text.length, 'characters (truncated from', rawText.length, ')');
 
     const systemPrompt = `You are an expert at parsing Indian bank statements. Extract transactions from the raw text.
 
-TASK: Parse the bank statement text and extract all transactions you can find.
+TASK: Parse the bank statement text and extract transactions. Be concise.
 
 OUTPUT FORMAT (JSON):
-{
-    "transactions": [
-        {
-            "date": "DD/MM/YYYY or DD-MM-YYYY format",
-            "description": "transaction description/narration",
-            "debit": number or 0,
-            "credit": number or 0,
-            "balance": number or 0,
-            "reference": "reference/cheque number if available"
-        }
-    ]
-}
+{"transactions":[{"date":"DD/MM/YYYY","description":"text","debit":0,"credit":0,"balance":0}]}
 
-PARSING TIPS FOR INDIAN BANK STATEMENTS:
-1. Look for date patterns like DD/MM/YYYY, DD-MM-YYYY, DD MMM YYYY, DD.MM.YYYY
-2. Transaction description/narration often follows the date
-3. Amounts appear in columns: often Withdrawal/Debit and Deposit/Credit
-4. Balance column usually at the end of each row
-5. Skip header rows, page footers, opening/closing balance summaries
-6. Numbers may have commas (1,000.00) - remove commas from output
+RULES:
+1. Extract transactions with date, description, debit/credit amounts
+2. Use numbers without commas (1000.00 not 1,000.00)
+3. Debit = withdrawal, Credit = deposit
+4. Skip headers, footers, summaries
+5. Return VALID JSON only - no markdown, no extra text`;
 
-IMPORTANT:
-- If the PDF text is garbled or poorly formatted, try to extract what you can
-- Return empty transactions array if no clear transactions found
-- Debit = money going out (withdrawal)
-- Credit = money coming in (deposit)`;
-
-    const userPrompt = `Extract ALL transactions from this bank statement text:\n\n${text}`;
+    const userPrompt = `Extract transactions from:\n\n${text}`;
 
     // Use longer timeout for PDF extraction (90 seconds)
     const PDF_TIMEOUT = 90000;
@@ -478,7 +541,7 @@ IMPORTANT:
                     { role: 'user', content: userPrompt }
                 ],
                 temperature: 0.1,
-                max_tokens: 4000, // More tokens for detailed extraction
+                max_tokens: 4000,
                 response_format: { type: 'json_object' }
             }),
             signal: controller.signal
@@ -502,25 +565,31 @@ IMPORTANT:
             return [];
         }
 
-        console.log('[AI PDF Parser] Raw response:', content.substring(0, 200));
+        console.log('[AI PDF Parser] Raw response length:', content.length);
+        console.log('[AI PDF Parser] Response preview:', content.substring(0, 300));
 
-        const parsed = JSON.parse(content);
+        // Use robust JSON parsing
+        const parsed = repairAndParseJSON(content);
         const transactions = parsed.transactions || [];
 
         console.log('[AI PDF Parser] Extracted', transactions.length, 'transactions');
 
+        if (transactions.length === 0) {
+            console.log('[AI PDF Parser] No transactions found. Full response:', content);
+        }
+
         // Normalize the transactions
         return transactions.map((t, i) => ({
             id: `ai-pdf-${Date.now()}-${i}`,
-            date: t.date || '',
-            dateRaw: t.date || '',
-            description: (t.description || '').trim(),
-            reference: t.reference || '',
-            debit: parseFloat(String(t.debit).replace(/,/g, '')) || 0,
-            credit: parseFloat(String(t.credit).replace(/,/g, '')) || 0,
-            balance: parseFloat(String(t.balance).replace(/,/g, '')) || 0,
-            type: (parseFloat(String(t.credit).replace(/,/g, '')) || 0) > 0 ? 'CREDIT' : 'DEBIT',
-            amount: parseFloat(String(t.credit).replace(/,/g, '')) || parseFloat(String(t.debit).replace(/,/g, '')) || 0,
+            date: String(t.date || '').trim(),
+            dateRaw: String(t.date || '').trim(),
+            description: String(t.description || '').trim(),
+            reference: String(t.reference || '').trim(),
+            debit: parseFloat(String(t.debit || 0).replace(/,/g, '')) || 0,
+            credit: parseFloat(String(t.credit || 0).replace(/,/g, '')) || 0,
+            balance: parseFloat(String(t.balance || 0).replace(/,/g, '')) || 0,
+            type: (parseFloat(String(t.credit || 0).replace(/,/g, '')) || 0) > 0 ? 'CREDIT' : 'DEBIT',
+            amount: parseFloat(String(t.credit || 0).replace(/,/g, '')) || parseFloat(String(t.debit || 0).replace(/,/g, '')) || 0,
             source: 'ai-pdf',
             status: 'pending'
         })).filter(t => t.date && (t.debit > 0 || t.credit > 0));
