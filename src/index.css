@@ -142,9 +142,9 @@
   --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* Layout */
-  --sidebar-width: 280px;
-  --sidebar-collapsed: 80px;
-  --header-height: 70px;
+  --sidebar-width: 220px;
+  --sidebar-collapsed: 64px;
+  --header-height: 60px;
 }
 
 /* Light Theme Overrides */
@@ -838,9 +838,11 @@ a:hover {
 }
 
 .stat-value {
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-weight: 700;
   color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .stat-change {
@@ -1984,5 +1986,116 @@ a:hover {
   body {
     background: white;
     color: black;
+  }
+}
+
+/* ========================================
+   ADDITIONAL RESPONSIVE FIXES (100% ZOOM)
+   ======================================== */
+
+/* For 1920px screens at 100% zoom - prevent overlap */
+@media (max-width: 1600px) {
+  :root {
+    --sidebar-width: 200px;
+  }
+
+  .stat-value {
+    font-size: var(--text-base);
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: var(--space-3);
+    font-size: var(--text-xs);
+  }
+
+  .card {
+    padding: var(--space-4);
+  }
+
+  .page-content {
+    padding: var(--space-6);
+  }
+}
+
+/* For smaller desktop screens */
+@media (max-width: 1280px) {
+  :root {
+    --sidebar-width: 180px;
+  }
+
+  .sidebar-logo-text {
+    font-size: var(--text-base);
+  }
+
+  .nav-item {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .nav-item-text {
+    font-size: var(--text-xs);
+  }
+
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .dashboard-grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-card {
+    padding: var(--space-3);
+  }
+
+  .stat-value {
+    font-size: var(--text-sm);
+  }
+
+  .header-title {
+    font-size: var(--text-base);
+  }
+
+  /* Table improvements for narrow screens */
+  .data-table {
+    font-size: var(--text-xs);
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: var(--space-2);
+    white-space: nowrap;
+  }
+}
+
+/* For very constrained screens */
+@media (max-width: 1100px) {
+  :root {
+    --sidebar-width: 160px;
+  }
+
+  .sidebar-logo-icon {
+    width: 32px;
+    height: 32px;
+    font-size: var(--text-sm);
+  }
+
+  .nav-item-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .dashboard-grid,
+  .dashboard-grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-icon {
+    width: 32px;
+    height: 32px;
   }
 }
