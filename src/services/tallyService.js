@@ -203,49 +203,29 @@ export const getLedgers = async (companyName) => {
       ];
     }
 
-    // Use TDL Collection format - this is the standard way to fetch ledgers in Tally Prime
+    // Simple collection request - works on all Tally versions
     const xml = `<?xml version="1.0" encoding="utf-8"?>
 <ENVELOPE>
 <HEADER>
-<TALLYREQUEST>Export Data</TALLYREQUEST>
+<VERSION>1</VERSION>
+<TALLYREQUEST>Export</TALLYREQUEST>
+<TYPE>Collection</TYPE>
+<ID>Ledger Collection</ID>
 </HEADER>
 <BODY>
-<EXPORTDATA>
-<REQUESTDESC>
+<DESC>
 <STATICVARIABLES>
 <SVCURRENTCOMPANY>${escapeXML(companyName)}</SVCURRENTCOMPANY>
 </STATICVARIABLES>
-<REPORTNAME>Ledger</REPORTNAME>
 <TDL>
 <TDLMESSAGE>
-<REPORT NAME="Ledger" ISMODIFY="No">
-<FORMS>Ledger</FORMS>
-</REPORT>
-<FORM NAME="Ledger" ISMODIFY="No">
-<TOPPARTS>Ledger</TOPPARTS>
-</FORM>
-<PART NAME="Ledger" ISMODIFY="No">
-<LINES>LedgerDtl</LINES>
-<REPEAT>LedgerDtl : LedgerCollection</REPEAT>
-<SCROLLED>Vertical</SCROLLED>
-</PART>
-<LINE NAME="LedgerDtl" ISMODIFY="No">
-<FIELDS>LedgerName,LedgerParent</FIELDS>
-</LINE>
-<FIELD NAME="LedgerName" ISMODIFY="No">
-<SET>$NAME</SET>
-</FIELD>
-<FIELD NAME="LedgerParent" ISMODIFY="No">
-<SET>$PARENT</SET>
-</FIELD>
-<COLLECTION NAME="LedgerCollection" ISMODIFY="No">
+<COLLECTION NAME="Ledger Collection">
 <TYPE>Ledger</TYPE>
-<FETCH>NAME,PARENT</FETCH>
+<FETCH>NAME, PARENT</FETCH>
 </COLLECTION>
 </TDLMESSAGE>
 </TDL>
-</REQUESTDESC>
-</EXPORTDATA>
+</DESC>
 </BODY>
 </ENVELOPE>`;
 
@@ -547,18 +527,52 @@ const formatTallyDate = (date) => {
   }
 
   try {
-    // Handle string dates (YYYY-MM-DD format from HTML date input)
+    // Handle string dates
     if (typeof date === 'string') {
+      // Remove any extra whitespace
+      const trimmed = date.trim();
+
       // If already in YYYYMMDD format
-      if (/^\d{8}$/.test(date)) {
-        return date;
+      if (/^\d{8}$/.test(trimmed)) {
+        return trimmed;
       }
+
       // If in YYYY-MM-DD format
-      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return date.replace(/-/g, '');
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        return trimmed.replace(/-/g, '');
       }
+
+      // Handle DD/MM/YYYY format (common in Indian statements)
+      const ddmmyyyyMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+      if (ddmmyyyyMatch) {
+        const [, day, month, year] = ddmmyyyyMatch;
+        return `${year}${month.padStart(2, '0')}${day.padStart(2, '0')}`;
+      }
+
+      // Handle DD/MM/YY format
+      const ddmmyyMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/);
+      if (ddmmyyMatch) {
+        const [, day, month, year] = ddmmyyMatch;
+        const fullYear = parseInt(year) > 50 ? `19${year}` : `20${year}`;
+        return `${fullYear}${month.padStart(2, '0')}${day.padStart(2, '0')}`;
+      }
+
+      // Handle DD MMM YYYY format (e.g., "01 Jan 2024")
+      const ddMmmYyyyMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+      if (ddMmmYyyyMatch) {
+        const [, day, monthStr, year] = ddMmmYyyyMatch;
+        const months = {
+          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+        };
+        const month = months[monthStr.toLowerCase()];
+        if (month) {
+          return `${year}${month}${day.padStart(2, '0')}`;
+        }
+      }
+
       // Try parsing as date
-      const parsed = new Date(date);
+      const parsed = new Date(trimmed);
       if (!isNaN(parsed.getTime())) {
         return parsed.toISOString().slice(0, 10).replace(/-/g, '');
       }
